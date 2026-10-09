@@ -20,13 +20,13 @@ This project is co-developed using a modular Git branching workflow:
 | Branch | Focus Area | Responsibility | Status |
 | :--- | :--- | :--- | :--- |
 | **`main`** | Stable Baseline | Shared stable releases, regression-tested core algorithms, and cached inputs | **Active Baseline** |
-| **`routing`** | Phase 3 Backend | Risk-aware pathfinding (Dijkstra/A*), travel times, backup routes, and baseline comparisons | *Upcoming Feature Branch* |
+| **`routing`** | Phase 3 Backend | Risk-aware pathfinding (Dijkstra), travel times, backup routes, and baseline comparisons | **Phase 3 Completed** |
 | **`ui`** | Phase 4 Frontend | Interactive Streamlit dashboard + Folium web map with rainfall/river stage sliders | *Upcoming Feature Branch (Collaborator)* |
 
 ### Collaboration Rules
 1. `main` always remains functional with verified regression outputs.
-2. The backend routing engine will be developed and tested in `routing` before merging into `main`.
-3. The Streamlit + Folium dashboard will be developed in `ui`, consuming the `saferoute` package API (`passability()`, `compute_depths()`, etc.).
+2. The backend routing engine is developed and tested in `routing` before merging into `main`.
+3. The Streamlit + Folium dashboard is developed in `ui`, consuming the `saferoute` package API (`passability()`, `RoutingEngine`, etc.).
 
 ---
 
@@ -43,11 +43,13 @@ This project is co-developed using a modular Git branching workflow:
   - Regional riverine stage and rainfall depression ponding depth calculation.
   - Soft-threshold logistic sigmoid passability probability for Ambulance ($28\text{ cm}$), Fire Tender ($50\text{ cm}$), and Rescue Truck ($65\text{ cm}$).
   - Invariant sanity assertions (non-negative depths, rainfall/river monotonicity).
-- [ ] **Phase 3: Risk-Aware Router & Benchmark Evaluation** *(Branch `routing`)*
-  - Strongly connected component extraction and parallel edge collapsing.
-  - Hydrodynamic travel time calculations with water slowdown.
-  - Additive log-risk Dijkstra router ($\text{cost} = \text{time} + \lambda (-\ln p)$).
-  - Primary, backup, and baseline shortest path evaluation.
+- [x] **Phase 3: Risk-Aware Router & Benchmark Evaluation** *(Branch `routing`)*
+  - Largest strongly connected component extraction ($1,779$ nodes, $4,682$ edges) and parallel edge collapsing ($4,676$ clean directed edges).
+  - Hydrodynamic travel time calculations with water slowdown ($\text{speed\_factor} = 1.0 - 0.5 \times \min(1.0, \frac{\text{depth}}{\text{safe\_depth}})$).
+  - Additive log-risk Dijkstra router ($\text{cost\_s} = \text{time\_s} + \lambda \times (-\ln(\max(p, 10^{-6})))$).
+  - Independent backup route generation ($10\times$ penalty on primary edges with $p < 0.95$).
+  - Conventional shortest-distance baseline comparison.
+  - 300 reproducible OD pair evaluation (seed 42) with top 5 scenario exports (`data/demo_scenarios.json`) and route comparison plot (`data/demo_route_comparison.png`).
 - [ ] **Phase 4: Interactive Dashboard** *(Branch `ui`)*
   - Streamlit application with river level and rainfall sliders.
   - Folium interactive geospatial map with color-coded passability layers.
@@ -105,9 +107,23 @@ Emergency vehicles have differing safe wading capabilities:
 
 Pass probability is evaluated via a logistic sigmoid with softness parameter $s = 5.0\text{ cm}$:
 $$p = \frac{1}{1 + \exp\left(\frac{\text{depth}_{\text{cm}} - \text{safe\_depth}_{\text{cm}}}{s}\right)}$$
-- $\text{depth} \ll \text{safe\_depth} \implies p \approx 1.0$ (Safe / Green)
-- $\text{depth} = \text{safe\_depth} \implies p = 0.5$ (Marginal / Yellow)
-- $\text{depth} \gg \text{safe\_depth} \implies p \approx 0.0$ (Impassable / Red)
+### C. Risk-Aware Emergency Routing Engine
+1. **Hydrodynamic Water Slowdown**:
+   Base travel time is computed at $30\text{ km/h}$ with dynamic water resistance:
+   $$\text{speed\_factor} = 1.0 - 0.5 \times \min\left(1.0,\, \frac{\text{depth}_{\text{cm}}}{\text{safe\_depth}_{\text{cm}}}\right)$$
+   $$\text{speed} = \max(5.0,\, \text{base\_speed} \times \text{speed\_factor}) \quad (\text{km/h})$$
+   $$\text{time\_s} = \frac{\text{length\_m}}{\text{speed}_{\text{m/s}}}$$
+
+2. **Additive Log-Risk Edge Cost**:
+   To optimize end-to-end reliability ($R = \prod p_e$) alongside travel time using standard Dijkstra pathfinding, edge cost uses the additive log-risk formulation:
+   $$\text{cost\_s} = \text{time\_s} + \lambda \times \left(-\ln(\max(p_e,\, 10^{-6}))\right)$$
+   where $\lambda = 120.0\text{ s}$ represents the trade-off penalty parameter configured in `saferoute/config.py`.
+
+3. **Independent Backup Route**:
+   Primary-route segments with pass probability $p < 0.95$ are penalized by a $10\times$ factor, forcing the router to seek independent, dry detour alternatives.
+
+4. **Shortest-Distance Baseline**:
+   Conventional navigation minimizes $\sum \text{length\_m}$ without flood awareness, frequently directing vehicles into low-elevation flooded depressions.
 
 ---
 
@@ -165,6 +181,17 @@ Executes sanity assertions and outputs the scenario passability matrix:
 
 Generates the 3×3 grid artifact at `data/passability_3x3_grid.png`.
 
+### Phase 3: Risk-Aware Routing Engine & 300-Scenario Demonstration
+```bash
+# Run unit test suite
+python -m unittest tests/test_routing.py
+
+# Run reproducible routing evaluation (seed 42, 300 OD pairs >= 1.5 km)
+python scripts/run_routing.py
+```
+
+Outputs the top 5 scenarios comparing SafeRoute vs. Baseline navigation to `data/demo_scenarios.json` and renders the best scenario map to `data/demo_route_comparison.png`.
+
 ---
 
 ## 8. Reference Visualizations
@@ -174,3 +201,7 @@ Generates the 3×3 grid artifact at `data/passability_3x3_grid.png`.
 
 ### 3×3 Scenario Passability Matrix
 ![3x3 Scenario Comparison Grid](data/passability_3x3_grid.png)
+
+### Phase 3: Emergency Route Comparison (Ambulance in Moderate Flood)
+![Emergency Route Comparison](data/demo_route_comparison.png)
+
