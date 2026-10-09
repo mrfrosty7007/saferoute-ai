@@ -1,0 +1,37 @@
+# Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python bytecode & caching
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Environment variables & credentials
+.env
+*.env
+.env.*
+
+# IDEs & Editor configs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Operating System temporary files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Download & runtime cache
+cache/
+.cache/
+*.log
+
+# Scratch & test plots
+data/test*.png
+data/temp*
