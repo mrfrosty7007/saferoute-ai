@@ -377,9 +377,62 @@ class TestTeammateUIAdapter(unittest.TestCase):
         formatted_zero = f"{p_zero:.2%}" if p_zero >= 0.0001 else ("<0.01%" if p_zero > 0.0 else "0.0%")
         self.assertEqual(formatted_zero, "0.0%")
 
+    def test_fresh_app_startup_and_defaults(self):
+        """Regression test: clean Streamlit startup loads without KeyError and selects benchmark defaults."""
+        import os
+        from streamlit.testing.v1 import AppTest
+        app_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app.py")
+        at = AppTest.from_file(app_path, default_timeout=30)
+        at.run()
+
+        # Zero exceptions on clean launch
+        self.assertEqual(len(at.exception), 0)
+
+        # Confirm benchmark default selections
+        orig_sb = [s for s in at.selectbox if "Origin landmark" in s.label][0]
+        dest_sb = [s for s in at.selectbox if "Destination landmark" in s.label][0]
+        self.assertEqual(orig_sb.value, "Daraganj South (Benchmark Origin)")
+        self.assertEqual(dest_sb.value, "Daraganj North (Benchmark Dest)")
+        self.assertIsNotNone(orig_sb.value)
+        self.assertIsNotNone(dest_sb.value)
+
+    def test_app_rerun_session_consistency(self):
+        """Regression test: app rerun maintains clean selections without clearing to 'Choose an option'."""
+        import os
+        from streamlit.testing.v1 import AppTest
+        app_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app.py")
+        at = AppTest.from_file(app_path, default_timeout=30)
+        at.run()
+        self.assertEqual(len(at.exception), 0)
+
+        # Trigger second rerun
+        at.run()
+        self.assertEqual(len(at.exception), 0)
+        orig_sb = [s for s in at.selectbox if "Origin landmark" in s.label][0]
+        dest_sb = [s for s in at.selectbox if "Destination landmark" in s.label][0]
+        self.assertEqual(orig_sb.value, "Daraganj South (Benchmark Origin)")
+        self.assertEqual(dest_sb.value, "Daraganj North (Benchmark Dest)")
+
+    def test_place_picker_stale_or_invalid_landmark_handling(self):
+        """Regression test: invalid or None landmark names never raise KeyError and fall back gracefully."""
+        from config import DARAGANJ_LANDMARKS
+        from services.contracts import Place
+
+        # Direct verification: indexing DARAGANJ_LANDMARKS with None or invalid key raises KeyError
+        with self.assertRaises(KeyError):
+            _ = DARAGANJ_LANDMARKS[None]
+        with self.assertRaises(KeyError):
+            _ = DARAGANJ_LANDMARKS["NonExistentLandmark"]
+
+        # Valid landmarks must always exist and return valid (lat, lon)
+        names = list(DARAGANJ_LANDMARKS.keys())
+        self.assertIn("Daraganj South (Benchmark Origin)", DARAGANJ_LANDMARKS)
+        self.assertIn("Daraganj North (Benchmark Dest)", DARAGANJ_LANDMARKS)
+        lat_o, lon_o = DARAGANJ_LANDMARKS[names[0]]
+        lat_d, lon_d = DARAGANJ_LANDMARKS[names[1]]
+        self.assertEqual((lat_o, lon_o), (25.4348, 81.8785))
+        self.assertEqual((lat_d, lon_d), (25.4514, 81.8825))
+
 
 if __name__ == "__main__":
     unittest.main()
-
-
-

@@ -59,7 +59,15 @@ def _place_picker(title: str, key: str, default: tuple) -> tuple[Place | None, s
         landmark_names = list(DARAGANJ_LANDMARKS.keys())
         default_idx = 0 if "origin" in key else 1
         widget_key = f"{key}_landmark"
-        idx = None if widget_key in st.session_state else default_idx
+
+        # Resolve valid integer index; fallback to benchmark default if empty, None, or stale
+        if widget_key in st.session_state and st.session_state[widget_key] in landmark_names:
+            idx = landmark_names.index(st.session_state[widget_key])
+        else:
+            idx = default_idx
+            if widget_key in st.session_state:
+                st.session_state[widget_key] = landmark_names[default_idx]
+
         selected_name = st.selectbox(
             f"{title} landmark",
             landmark_names,
@@ -67,8 +75,17 @@ def _place_picker(title: str, key: str, default: tuple) -> tuple[Place | None, s
             key=widget_key,
             label_visibility="collapsed",
         )
-        lat, lon = DARAGANJ_LANDMARKS[selected_name]
-        return Place(selected_name, lat, lon), None
+
+        # Validate selection before indexing DARAGANJ_LANDMARKS
+        if selected_name and selected_name in DARAGANJ_LANDMARKS:
+            lat, lon = DARAGANJ_LANDMARKS[selected_name]
+            return Place(selected_name, lat, lon), None
+        else:
+            # Safe fallback to benchmark default if selection is empty, None, or invalid
+            fallback_name = landmark_names[default_idx]
+            lat, lon = DARAGANJ_LANDMARKS[fallback_name]
+            st.session_state[widget_key] = fallback_name
+            return Place(fallback_name, lat, lon), None
 
     elif mode == "Search place":
         q = st.text_input(
