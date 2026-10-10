@@ -9,6 +9,7 @@ attributes to edges, and managing persistent GraphML caching.
 """
 
 import glob
+import hashlib
 import json
 import math
 import os
@@ -76,61 +77,189 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     return EARTH_RADIUS_METERS * c
 
 
+def get_network_query_fingerprint(
+    place_name: str = PLACE_NAME,
+    center_lat: float = CENTER_LAT,
+    center_lon: float = CENTER_LON,
+    radius_m: float = RADIUS_METERS,
+    network_type: str = NETWORK_TYPE,
+) -> str:
+    """
+    Compute a deterministic 16-hex query fingerprint for road network parameters.
+
+    Args:
+        place_name: Target locality string.
+        center_lat: Latitude of study area center.
+        center_lon: Longitude of study area center.
+        radius_m: Network radius in meters.
+        network_type: OSMnx network type ('drive', 'walk', etc.).
+
+    Returns:
+        16-character hexadecimal SHA-256 digest string.
+    """
+    query_str = f"{place_name}|{center_lat:.4f}|{center_lon:.4f}|{radius_m:.0f}|{network_type}"
+    return hashlib.sha256(query_str.encode("utf-8")).hexdigest()[:16]
+
+
+def validate_osm_cache_candidate(
+    cache_path: str,
+    center_lat: float = CENTER_LAT,
+    center_lon: float = CENTER_LON,
+    radius_m: float = RADIUS_METERS,
+    min_matching_nodes: int = 500,
+) -> Optional[nx.MultiDiGraph]:
+    """
+    Validate that a cached OSM JSON file corresponds to the requested study area:
+    1. Safely parses JSON structure and ensures Overpass elements exist.
+    2. Verifies geographic relevance: nodes must be centered near (center_lat, center_lon).
+    3. Verifies that the candidate contains sufficient drivable road network nodes within radius_m.
+    4. Constructs and simplifies the circular subgraph.
+
+    Args:
+        cache_path: Path to candidate Overpass JSON cache file.
+        center_lat: Study area center latitude.
+        center_lon: Study area center longitude.
+        radius_m: Study area radius in meters.
+        min_matching_nodes: Minimum acceptable nodes in circular network.
+
+    Returns:
+        Validated networkx.MultiDiGraph if candidate matches, or None if invalid/unrelated.
+    """
+    if not os.path.isfile(cache_path):
+        return None
+
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    elements = data.get("elements")
+    if not isinstance(elements, list) or len(elements) < 100:
+        return None
+
+    # Extract node coordinates for fast geographic bounding check
+    node_coords = [
+        (e["lat"], e["lon"])
+        for e in elements
+        if isinstance(e, dict) and e.get("type") == "node" and "lat" in e and "lon" in e
+    ]
+    if len(node_coords) < min_matching_nodes:
+        return None
+
+    # Count nodes within study area bounding envelope
+    nodes_in_envelope = [
+        (lat, lon) for lat, lon in node_coords
+        if haversine_distance(center_lat, center_lon, lat, lon) <= (radius_m * 1.5)
+    ]
+    if len(nodes_in_envelope) < min_matching_nodes:
+        return None
+
+    # Check centroid geographic proximity
+    mean_lat = sum(lat for lat, _ in nodes_in_envelope) / len(nodes_in_envelope)
+    mean_lon = sum(lon for _, lon in nodes_in_envelope) / len(nodes_in_envelope)
+    if haversine_distance(center_lat, center_lon, mean_lat, mean_lon) > radius_m:
+        return None
+
+    # Build and simplify graph from candidate
+    try:
+        G_raw = ox.graph._create_graph([data], False)
+        G_simple = ox.simplification.simplify_graph(G_raw)
+
+        nodes_in_circle = [
+            n for n, d in G_simple.nodes(data=True)
+            if haversine_distance(center_lat, center_lon, d["y"], d["x"]) <= radius_m
+        ]
+        if len(nodes_in_circle) < min_matching_nodes:
+            return None
+
+        G = G_simple.subgraph(nodes_in_circle).copy()
+        if G.number_of_nodes() < min_matching_nodes or G.number_of_edges() < (min_matching_nodes * 2):
+            return None
+
+        return G
+    except Exception as e:
+        print(f"    [Cache Check] Could not construct graph from {cache_path}: {e}", flush=True)
+        return None
+
+
 def fetch_road_network() -> nx.MultiDiGraph:
     """
     Load the drivable road network within RADIUS_METERS of PLACE_NAME.
-    Checks existing local Overpass cache first, then attempts direct query,
-    with an automated bounding-box plus circular distance filter fallback.
+    Uses deterministic query-specific cache selection and validates candidate
+    geographic relevance before falling back to Overpass API / bbox queries.
 
     Returns:
         Simplified networkx.MultiDiGraph road network.
+
+    Raises:
+        RuntimeError: If all local cache candidates and network queries fail.
     """
     print(f"Loading road network for '{PLACE_NAME}' (radius: {RADIUS_METERS}m)...", flush=True)
 
-    # 1. Check local Overpass response cache
+    fingerprint = get_network_query_fingerprint()
+    dedicated_cache = os.path.join("cache", f"query_{fingerprint}.json")
+
+    # 1. Check dedicated query-fingerprint cache file first
+    if os.path.exists(dedicated_cache):
+        print(f"  Checking dedicated query cache: {dedicated_cache}...", flush=True)
+        G_ded = validate_osm_cache_candidate(dedicated_cache)
+        if G_ded is not None:
+            print(f"  Loaded from query cache: {len(G_ded.nodes()):,} nodes, {len(G_ded.edges()):,} edges.", flush=True)
+            return G_ded
+
+    # 2. Check and validate candidate Overpass response cache files
     cache_files = glob.glob("cache/*.json")
     for cf in cache_files:
-        if os.path.getsize(cf) > 500_000:
-            try:
-                print(f"  Found cached OSM Overpass data in {cf}, loading graph...", flush=True)
-                with open(cf, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                G_raw = ox.graph._create_graph([data], False)
-                G_simple = ox.simplification.simplify_graph(G_raw)
+        if os.path.abspath(cf) == os.path.abspath(dedicated_cache):
+            continue
+        # Only inspect files with realistic Overpass response size (> 100 KB)
+        if os.path.getsize(cf) > 100_000:
+            G_cand = validate_osm_cache_candidate(cf)
+            if G_cand is not None:
+                print(f"  Found verified matching OSM Overpass data in {cf}.", flush=True)
+                print(f"  Loaded from validated cache: {len(G_cand.nodes()):,} nodes, {len(G_cand.edges()):,} edges.", flush=True)
+                return G_cand
 
-                nodes_in_circle = [
-                    n for n, d in G_simple.nodes(data=True)
-                    if haversine_distance(CENTER_LAT, CENTER_LON, d["y"], d["x"]) <= RADIUS_METERS
-                ]
-                G = G_simple.subgraph(nodes_in_circle).copy()
-                print(f"  Loaded from cache: {len(G.nodes()):,} nodes, {len(G.edges()):,} edges.", flush=True)
-                return G
-            except Exception as e:
-                print(f"  Could not load from {cf}: {e}", flush=True)
-
-    # 2. Try direct ox.graph_from_address
+    # 3. Try direct ox.graph_from_address
+    print("  No matching offline cache found. Attempting live Overpass API query...", flush=True)
     try:
         G = ox.graph_from_address(PLACE_NAME, dist=RADIUS_METERS, network_type=NETWORK_TYPE)
         print(f"  Loaded via graph_from_address: {len(G.nodes()):,} nodes, {len(G.edges()):,} edges.", flush=True)
         return G
     except Exception as e:
-        print(f"  Notice: Direct graph_from_address query timed out ({e}).", flush=True)
+        print(f"  Notice: Direct graph_from_address query failed or timed out ({e}).", flush=True)
 
-    # 3. Fallback: Geocode and load via bounding box with exact circular radius filter
+    # 4. Fallback: Geocode and load via bounding box with exact circular radius filter
     print("  Using geocoded bounding box with circular radius filtering fallback...", flush=True)
-    center_lat, center_lon = ox.geocode(PLACE_NAME)
-    d_lat = RADIUS_METERS / METERS_PER_DEG_LAT
-    d_lon = RADIUS_METERS / METERS_PER_DEG_LON
-    bbox = (center_lon - d_lon, center_lat - d_lat, center_lon + d_lon, center_lat + d_lat)
+    try:
+        center_lat, center_lon = ox.geocode(PLACE_NAME)
+        d_lat = RADIUS_METERS / METERS_PER_DEG_LAT
+        d_lon = RADIUS_METERS / METERS_PER_DEG_LON
+        bbox = (center_lon - d_lon, center_lat - d_lat, center_lon + d_lon, center_lat + d_lat)
 
-    G_box = ox.graph_from_bbox(bbox, network_type=NETWORK_TYPE)
-    nodes_in_circle = [
-        n for n, d in G_box.nodes(data=True)
-        if haversine_distance(center_lat, center_lon, d["y"], d["x"]) <= RADIUS_METERS
-    ]
-    G = G_box.subgraph(nodes_in_circle).copy()
-    print(f"  Loaded via bbox filter: {len(G.nodes()):,} nodes, {len(G.edges()):,} edges.", flush=True)
-    return G
+        G_box = ox.graph_from_bbox(bbox, network_type=NETWORK_TYPE)
+        nodes_in_circle = [
+            n for n, d in G_box.nodes(data=True)
+            if haversine_distance(center_lat, center_lon, d["y"], d["x"]) <= RADIUS_METERS
+        ]
+        G = G_box.subgraph(nodes_in_circle).copy()
+        if G.number_of_nodes() >= 500:
+            print(f"  Loaded via bbox filter: {len(G.nodes()):,} nodes, {len(G.edges()):,} edges.", flush=True)
+            return G
+        raise ValueError(f"Extracted bbox network contains only {G.number_of_nodes()} nodes (insufficient).")
+    except Exception as e:
+        print(f"  Bbox query fallback failed: {e}", flush=True)
+
+    # 5. Fail gracefully with clear actionable error
+    raise RuntimeError(
+        f"Failed to load drivable road network for '{PLACE_NAME}' (radius {RADIUS_METERS}m). "
+        "No matching local cache was found in cache/ and live Overpass API queries failed. "
+        "Please check your internet connection or place a valid Overpass JSON file into cache/."
+    )
 
 
 def fetch_elevation_batch(coords: List[Tuple[float, float]], endpoint_url: str) -> Optional[List[Optional[float]]]:

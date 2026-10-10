@@ -37,12 +37,14 @@ This project is co-developed using a modular Git branching workflow:
   - OpenTopoData SRTM 30m batch fetching with rate limiting and automatic 90m fallback.
   - Multi-pass topological neighbor averaging for null elevation filling.
   - GraphML persistence with float type casting (`data/graph.graphml`).
+  - **Data Integrity Hardening**: Deterministic query fingerprinting for Overpass cache selection, strict JSON element validation, geographic relevance enforcement (node count $\ge 500$, centroid distance $\le \text{radius\_m}$), and offline validation prevents loading unrelated candidate files.
 - [x] **Phase 2: Hydrodynamic Flood Risk & Passability Model**
   - Robust bridge classifier handling multi-value and stringified OSM tags ($20$ bridges identified).
   - Topographic depression computation within $300\text{ m}$ radius cached in `data/depressions.pkl`.
   - Regional riverine stage and rainfall depression ponding depth calculation.
   - Soft-threshold logistic sigmoid passability probability for Ambulance ($28\text{ cm}$), Fire Tender ($50\text{ cm}$), and Rescue Truck ($65\text{ cm}$).
   - Invariant sanity assertions (non-negative depths, rainfall/river monotonicity).
+  - **Data Integrity Hardening**: Cache schema versioning (Schema v2) with deterministic SHA-256 graph fingerprinting, exact edge key set verification, `(u, v, k)` key normalization, legacy Schema v1 backward compatibility, and strict `KeyError` enforcement eliminating silent zero depression defaults.
 - [x] **Phase 3: Risk-Aware Router & Benchmark Evaluation** *(Branch `routing`)*
   - Largest strongly connected component extraction ($1,779$ nodes, $4,682$ edges) and parallel edge collapsing ($4,676$ clean directed edges).
   - Hydrodynamic travel time calculations with water slowdown ($\text{speed\_factor} = 1.0 - 0.5 \times \min(1.0, \frac{\text{depth}}{\text{safe\_depth}})$).
@@ -183,7 +185,11 @@ Generates the 3×3 grid artifact at `data/passability_3x3_grid.png`.
 
 ### Phase 3: Risk-Aware Routing Engine & 300-Scenario Demonstration
 ```bash
-# Run unit test suite
+# Run unit test suite (including cache validation regression tests)
+python -m unittest discover tests
+
+# Or run specific test modules
+python -m unittest tests/test_cache_validation.py
 python -m unittest tests/test_routing.py
 
 # Run reproducible routing evaluation (seed 42, 300 OD pairs >= 1.5 km)
@@ -191,6 +197,19 @@ python scripts/run_routing.py
 ```
 
 Outputs the top 5 scenarios comparing SafeRoute vs. Baseline navigation to `data/demo_scenarios.json` and renders the best scenario map to `data/demo_route_comparison.png`.
+
+### Phase 4: Interactive Multi-Hazard Dashboard (Streamlit + Folium)
+```bash
+# Launch interactive dashboard
+streamlit run app.py
+
+# Or using the launcher script
+python scripts/run_app.py
+
+# Or on Windows double-click
+run_demo.bat
+```
+Opens the interactive web application at `http://localhost:8501`. Enables switching between validated flood and simulated earthquake scenarios, adjusting river/rainfall/shaking parameters, choosing emergency vehicles, and comparing Primary, Backup, and Baseline routes on an interactive Folium map.
 
 ---
 

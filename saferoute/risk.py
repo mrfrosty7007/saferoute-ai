@@ -14,6 +14,8 @@ Responsible for:
 """
 
 import ast
+import hashlib
+import math
 import os
 import pickle
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -74,6 +76,140 @@ def is_bridge(data: Dict[str, Any]) -> bool:
     return True
 
 
+def normalize_edge_key(edge_key: Tuple[Any, Any, Any]) -> Tuple[Union[int, str], Union[int, str], Union[int, str]]:
+    """
+    Normalize an edge key tuple (u, v, k) so integer-convertible values are cast to int.
+    Ensures consistent tuple comparisons between NetworkX graphs and serialized caches.
+
+    Args:
+        edge_key: Tuple of (u, v, key).
+
+    Returns:
+        Canonical tuple of (u, v, key).
+    """
+    if not isinstance(edge_key, (tuple, list)) or len(edge_key) != 3:
+        raise ValueError(f"Invalid edge key structure: {edge_key}. Expected 3-tuple (u, v, k).")
+    u, v, k = edge_key
+    try:
+        norm_u = int(u)
+    except (ValueError, TypeError):
+        norm_u = u
+    try:
+        norm_v = int(v)
+    except (ValueError, TypeError):
+        norm_v = v
+    try:
+        norm_k = int(k)
+    except (ValueError, TypeError):
+        norm_k = k
+    return (norm_u, norm_v, norm_k)
+
+
+def compute_graph_fingerprint(G: nx.MultiDiGraph, radius_m: float = DEPRESSION_RADIUS_M) -> str:
+    """
+    Generate a deterministic SHA-256 fingerprint for G's topology, elevations, and depression radius.
+    Ensures that any structural change to edges or elevations invalidates stale caches.
+
+    Args:
+        G: Road network graph with 'elev_min'.
+        radius_m: Topographic depression neighborhood radius.
+
+    Returns:
+        Hexadecimal SHA-256 digest string.
+    """
+    hasher = hashlib.sha256()
+    hasher.update(f"{G.number_of_nodes()}:{G.number_of_edges()}:{radius_m:.2f}".encode("utf-8"))
+
+    sorted_edges = sorted(
+        (normalize_edge_key((u, v, k)), float(d.get("elev_min", 0.0)))
+        for u, v, k, d in G.edges(keys=True, data=True)
+    )
+    for (u, v, k), elev_min in sorted_edges:
+        hasher.update(f"{u},{v},{k}:{elev_min:.4f};".encode("utf-8"))
+
+    return hasher.hexdigest()
+
+
+def validate_depression_cache(
+    cached_data: Any,
+    G: nx.MultiDiGraph,
+    radius_m: float = DEPRESSION_RADIUS_M,
+) -> Optional[Dict[Tuple[int, int, int], float]]:
+    """
+    Defensively validate loaded depressions cache:
+    1. Supports schema v2 (dict with metadata and 'depressions') and legacy v1 (raw dict).
+    2. Validates graph fingerprint if present in metadata.
+    3. Validates that every edge in G is present in the cache (exact key-set match).
+    4. Validates that all depression values are finite non-negative floats.
+
+    Args:
+        cached_data: Object unpickled from disk.
+        G: Road network graph to validate against.
+        radius_m: Target depression neighborhood radius.
+
+    Returns:
+        Valid dictionary mapping normalized (u, v, k) to float depression in meters,
+        or None if validation fails.
+    """
+    if not isinstance(cached_data, dict):
+        print("  [Cache Validation] Stale or invalid cache format: expected dictionary.", flush=True)
+        return None
+
+    # Schema v2 detection
+    if "schema_version" in cached_data and "depressions" in cached_data:
+        meta_fp = cached_data.get("graph_fingerprint")
+        meta_rad = cached_data.get("radius_m")
+        raw_depressions = cached_data.get("depressions")
+
+        if meta_rad is not None and abs(float(meta_rad) - radius_m) > 1e-3:
+            print(f"  [Cache Validation] Radius mismatch: cache={meta_rad}m, requested={radius_m}m.", flush=True)
+            return None
+
+        if meta_fp is not None:
+            expected_fp = compute_graph_fingerprint(G, radius_m)
+            if meta_fp != expected_fp:
+                print("  [Cache Validation] Graph fingerprint mismatch: network topology or elevations changed.", flush=True)
+                return None
+    else:
+        # Schema v1 legacy raw dictionary
+        raw_depressions = cached_data
+
+    if not isinstance(raw_depressions, dict):
+        print("  [Cache Validation] Depressions payload is not a dictionary.", flush=True)
+        return None
+
+    # Normalize cache keys
+    try:
+        norm_cache: Dict[Tuple[int, int, int], float] = {
+            normalize_edge_key(k): float(v) for k, v in raw_depressions.items()
+        }
+    except Exception as e:
+        print(f"  [Cache Validation] Error normalizing cache keys/values: {e}", flush=True)
+        return None
+
+    # Check value validity (finite and non-negative)
+    for k, v in norm_cache.items():
+        if math.isnan(v) or math.isinf(v) or v < 0.0:
+            print(f"  [Cache Validation] Invalid depression value {v} for edge {k}.", flush=True)
+            return None
+
+    # Check edge-key coverage against G
+    expected_edge_keys = set(normalize_edge_key((u, v, k)) for u, v, k in G.edges(keys=True))
+    cached_edge_keys = set(norm_cache.keys())
+
+    missing_keys = expected_edge_keys - cached_edge_keys
+    if missing_keys:
+        print(f"  [Cache Validation] Incomplete cache: {len(missing_keys)} graph edges missing from cache.", flush=True)
+        return None
+
+    extra_keys = cached_edge_keys - expected_edge_keys
+    if extra_keys:
+        print(f"  [Cache Validation] Stale cache: {len(extra_keys)} extra edges present not in graph.", flush=True)
+        return None
+
+    return norm_cache
+
+
 def precompute_depressions(
     G: nx.MultiDiGraph,
     radius_m: float = DEPRESSION_RADIUS_M,
@@ -93,11 +229,15 @@ def precompute_depressions(
     """
     if os.path.exists(cache_path):
         print(f"Loading cached topographic depressions from {cache_path}...", flush=True)
-        with open(cache_path, "rb") as f:
-            depressions = pickle.load(f)
-        if len(depressions) == G.number_of_edges():
-            return depressions
-        print("  Cache size mismatch. Recomputing depressions...", flush=True)
+        try:
+            with open(cache_path, "rb") as f:
+                cached_data = pickle.load(f)
+            validated_depressions = validate_depression_cache(cached_data, G, radius_m)
+            if validated_depressions is not None:
+                return validated_depressions
+            print("  Cache validation rejected cached file. Recomputing depressions...", flush=True)
+        except Exception as e:
+            print(f"  Failed to read cache file {cache_path} ({e}). Recomputing depressions...", flush=True)
 
     print(f"Precomputing edge topographic depressions (radius: {radius_m}m)...", flush=True)
 
@@ -129,10 +269,19 @@ def precompute_depressions(
         local_mean = elevs_arr[nbr_indices].mean()
         depressions[edge_keys[idx]] = max(0.0, float(local_mean - elevs_arr[idx]))
 
+    # Prepare Schema v2 payload with fingerprint and metadata
+    cache_payload = {
+        "schema_version": 2,
+        "graph_fingerprint": compute_graph_fingerprint(G, radius_m),
+        "radius_m": float(radius_m),
+        "edge_count": len(depressions),
+        "depressions": depressions,
+    }
+
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     with open(cache_path, "wb") as f:
-        pickle.dump(depressions, f)
-    print(f"Saved {len(depressions):,} edge depressions to cache: {cache_path}.", flush=True)
+        pickle.dump(cache_payload, f)
+    print(f"Saved {len(depressions):,} edge depressions (schema v2) to cache: {cache_path}.", flush=True)
 
     return depressions
 
@@ -162,6 +311,9 @@ def compute_depths(
 
     Returns:
         Dictionary mapping edge key (u, v, k) to water depth in cm.
+
+    Raises:
+        KeyError: If an edge is missing from the depressions dictionary.
     """
     if depressions is None:
         depressions = precompute_depressions(G)
@@ -182,7 +334,20 @@ def compute_depths(
                 depth_cm = 0.0
         else:
             riverine_depth_cm = max(0.0, river_level_m - elev_min) * CM_PER_METER
-            depression_m = depressions.get(edge_key, 0.0)
+
+            # Strictly validate depression presence - never silently default to 0.0
+            norm_key = normalize_edge_key(edge_key)
+            if edge_key in depressions:
+                depression_m = float(depressions[edge_key])
+            elif norm_key in depressions:
+                depression_m = float(depressions[norm_key])
+            else:
+                raise KeyError(
+                    f"Edge {edge_key} (normalized: {norm_key}) is missing from depressions dictionary. "
+                    "Cannot calculate flood depth without precomputed depression. "
+                    "Run precompute_depressions(G) to generate a complete cache."
+                )
+
             rain_depth_cm = k * float(rainfall_mm_hr) * (1.0 + depression_m)
             depth_cm = riverine_depth_cm + rain_depth_cm
 

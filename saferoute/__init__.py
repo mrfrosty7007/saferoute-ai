@@ -15,6 +15,13 @@ from .data import (
     load_cached_graph,
     load_or_create_graph,
 )
+from .hazard import (
+    AVAILABLE_HAZARDS,
+    EarthquakeHazardModel,
+    FloodHazardModel,
+    HazardModel,
+    get_hazard_model,
+)
 from .risk import (
     compute_depths,
     evaluate_scenarios,
@@ -53,6 +60,11 @@ __all__ = [
     "passability",
     "evaluate_scenarios",
     "run_sanity_assertions",
+    "HazardModel",
+    "FloodHazardModel",
+    "EarthquakeHazardModel",
+    "AVAILABLE_HAZARDS",
+    "get_hazard_model",
     "plot_elevation_network",
     "plot_passability",
     "plot_3x3_grid",
