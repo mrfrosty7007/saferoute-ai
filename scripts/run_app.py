@@ -25,6 +25,10 @@ def main():
     print("Study Area: Daraganj, Prayagraj, India")
     print("=" * 60)
 
+    port = os.environ.get("PORT", "8501")
+    if len(sys.argv) > 1 and sys.argv[1].isdigit():
+        port = sys.argv[1]
+
     cmd = [
         sys.executable,
         "-m",
@@ -32,7 +36,7 @@ def main():
         "run",
         app_file,
         "--server.headless=true",
-        "--server.port=8501",
+        f"--server.port={port}",
     ]
 
     try:
