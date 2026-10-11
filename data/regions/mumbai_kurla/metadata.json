@@ -1,0 +1,43 @@
+{
+  "region_id": "mumbai_kurla",
+  "display_name": "Kurla & Mithi River Basin",
+  "state": "Maharashtra",
+  "district": "Mumbai Suburban",
+  "city": "Mumbai",
+  "ingestion_timestamp": "2026-10-11 12:28:19Z",
+  "ingestion_duration_sec": 20.89,
+  "node_count": 20685,
+  "edge_count": 49281,
+  "disconnected_nodes_removed": 804,
+  "elevation_nulls_filled": 20685,
+  "elevation_min_m": 50.0,
+  "elevation_max_m": 50.0,
+  "elevation_mean_m": 50.0,
+  "bridge_edges": 866,
+  "tunnel_edges": 156,
+  "actual_bounds": {
+    "min_lat": 19.0300004,
+    "max_lat": 19.109999,
+    "min_lon": 72.8400018,
+    "max_lon": 72.9249808
+  },
+  "data_provenance": "OpenStreetMap contributors via OSMnx",
+  "attribution": "Map data © OpenStreetMap contributors, ODbL 1.0",
+  "osm_source": {
+    "provider": "BBBike.org city extract, based on OpenStreetMap contributors",
+    "url": "https://download.bbbike.org/osm/bbbike/Bombay/Bombay.osm.gz",
+    "retrieved_at_utc": "2026-10-11T12:28:19Z",
+    "source_snapshot_timestamp": "Not provided with the downloaded city extract; retrieval time is not the OSM snapshot time",
+    "compressed_source_sha256": "2aa7e6c13b18cba76cb2471408d6c5b2b5d7e390b0fdb3b20e57249b8133ab8f",
+    "clip_bounds_with_context": {
+      "min_lat": 19.03,
+      "max_lat": 19.11,
+      "min_lon": 72.84,
+      "max_lon": 72.925
+    },
+    "context_buffer_degrees": 0.01,
+    "attribution": "Map data © OpenStreetMap contributors, ODbL 1.0"
+  },
+  "elevation_source": "Synthetic flat placeholder, 50.0 m at all nodes; no DEM supplied",
+  "hazard_scope": "Synthetic demo only; hazard impacts, passability, and reliability are not calibrated for this region"
+}

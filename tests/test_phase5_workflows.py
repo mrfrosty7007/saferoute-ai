@@ -99,12 +99,12 @@ class TestPhase5Workflows(unittest.TestCase):
 
     def test_switching_to_unavailable_region_and_reset_restores_benchmark(self):
         app = AppTest.from_file(self.app_path, default_timeout=30).run()
-        app.selectbox(key="region_state").set_value("Maharashtra").run()
+        app.selectbox(key="region_state").set_value("Tamil Nadu").run()
 
-        self.assertEqual(app.session_state["region_state"], "Maharashtra")
-        self.assertEqual(app.session_state["region_district"], "Mumbai Suburban")
-        self.assertEqual(app.session_state["region_id"], "mumbai_kurla")
-        self.assertEqual(app.session_state["origin_landmark"], "Kurla West Station")
+        self.assertEqual(app.session_state["region_state"], "Tamil Nadu")
+        self.assertEqual(app.session_state["region_district"], "Chennai")
+        self.assertEqual(app.session_state["region_id"], "chennai_adyar")
+        self.assertEqual(app.session_state["origin_landmark"], "Saidapet Bridge")
         self.assertTrue(any("UNAVAILABLE" in item.value for item in app.warning))
 
         app.session_state["errors"] = ["stale region error"]

@@ -76,13 +76,43 @@ HAZARDS: dict[str, Hazard] = {
         ),
         Hazard(
             "earthquake",
-            "Earthquake Debris (Scenario Simulation)",
-            "Ground shaking attenuation, narrow street masonry collapse, and bridge structural caution [Exploratory Scenario]",
+            "Earthquake Debris — Synthetic Demo",
+            "SYNTHETIC DEMO ONLY: all earthquake inputs and impacts are dummy values, not observations or a forecast.",
             False,
             (
                 Param("magnitude", "Epicenter shaking intensity", "MMI", 5.0, 9.5, 7.2, 0.1),
                 Param("epicenter_dist", "Distance to epicenter", "km", 1.0, 50.0, 12.0, 1.0),
                 Param("debris_vuln", "Masonry debris factor", "x", 0.5, 2.0, 1.0, 0.1),
+            ),
+        ),
+        Hazard(
+            "cyclone_demo",
+            "Cyclone — Synthetic Demo",
+            "SYNTHETIC DEMO ONLY: wind and rainfall values are invented for demonstration; no cyclone, surge, or weather observations are used.",
+            False,
+            (
+                Param("wind_speed_dummy", "Dummy wind speed", "km/h", 60, 240, 160, 10),
+                Param("rainfall_dummy", "Dummy rainfall intensity", "mm/h", 0, 250, 100, 10),
+            ),
+        ),
+        Hazard(
+            "landslide_demo",
+            "Landslide — Synthetic Demo",
+            "SYNTHETIC DEMO ONLY: rainfall and slope-susceptibility values are invented; no landslide inventory or warning data is used.",
+            False,
+            (
+                Param("rainfall_dummy", "Dummy rainfall trigger", "mm/h", 0, 300, 180, 10),
+                Param("slope_susceptibility_dummy", "Dummy slope susceptibility", "index", 0, 100, 55, 5),
+            ),
+        ),
+        Hazard(
+            "wildfire_demo",
+            "Wildfire — Synthetic Demo",
+            "SYNTHETIC DEMO ONLY: fire intensity and distance are invented scenario inputs; no fire perimeter or live detection is used.",
+            False,
+            (
+                Param("fire_intensity_dummy", "Dummy fire intensity", "index", 1, 10, 6, 1),
+                Param("fire_front_distance_dummy", "Dummy distance to fire front", "km", 0.1, 10, 2, 0.1),
             ),
         ),
     )

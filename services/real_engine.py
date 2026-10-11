@@ -38,7 +38,10 @@ class RealRoutingEngine:
         self.G_base = G_base if G_base is not None else load_cached_graph(self.region.graph_file)
         if depressions is not None:
             self.depressions = depressions
-        elif self.region.depressions_file and os.path.exists(self.region.depressions_file):
+        elif self.region.depressions_file:
+            # Keep derived data scoped to its region, including on first creation.
+            # Falling through to the global Phase 2 default would overwrite the
+            # Daraganj cache when a regional engine is constructed without a cache.
             self.depressions = precompute_depressions(
                 self.G_base,
                 cache_path=self.region.depressions_file,
@@ -71,6 +74,14 @@ class RealRoutingEngine:
         except ValueError as exc:
             raise RoutingError(str(exc)) from exc
 
+        # Regional flood physics is calibrated only for the bundled Daraganj pilot.
+        # Other regions deliberately remain synthetic demos, even when using the
+        # same flood calculation over placeholder terrain attributes.
+        model_is_validated = (
+            hazard_model.is_validated
+            and self.region.region_id == DEFAULT_REGION_ID
+        )
+
         # 2. Map request parameters to hazard model arguments
         params = request.params or {}
         if request.hazard == "flood":
@@ -96,6 +107,14 @@ class RealRoutingEngine:
                 intensity_mmi=magnitude,
                 epicenter_dist_km=epicenter_dist,
                 debris_vulnerability=debris_vuln,
+            )
+        elif request.hazard in {"cyclone_demo", "landslide_demo", "wildfire_demo"}:
+            # These controls intentionally carry dummy values and use a synthetic
+            # impact index. The hazard model and result banner both disclose this.
+            G_enriched = hazard_model.evaluate_risk(
+                self.G_base,
+                vehicle=request.vehicle,
+                **params,
             )
         else:
             raise RoutingError(f"Hazard '{request.hazard}' is not yet supported by the routing engine.")
@@ -143,35 +162,55 @@ class RealRoutingEngine:
 
         # 8. Add contextual notes
         notes: List[str] = []
-        if request.hazard == "flood":
+        if request.hazard == "flood" and model_is_validated:
             notes.append("Validated Phase 2 hydrodynamic backwater and elevation ponding model.")
-        elif request.hazard == "earthquake":
-            notes.append("Exploratory scenario simulation for Daraganj urban morphology (Not a live seismic forecast).")
+        elif request.hazard == "flood":
+            notes.append(
+                "Regional flood demo only: elevations and hazard outputs are synthetic placeholders, "
+                "not observed terrain, flood forecasts, or emergency guidance."
+            )
+        elif not hazard_model.is_validated:
+            notes.append(hazard_model.description)
 
-        rel_gain = (primary_route.reliability - baseline_route.reliability) * 100.0
-        if rel_gain >= 0.5:
-            notes.append(f"SafeRoute delivers +{rel_gain:.1f}% greater reliability over conventional shortest path.")
-        elif primary_route.reliability > 0 and baseline_route.reliability > 0:
-            ratio = primary_route.reliability / baseline_route.reliability
-            if ratio >= 1.5:
-                notes.append(f"SafeRoute achieves {ratio:.1f}× higher relative survival probability than conventional baseline.")
-        elif primary_route.reliability > 0 and baseline_route.reliability == 0:
-            notes.append("SafeRoute navigates elevated ground, avoiding impassable flooded segments that sever the baseline path.")
+        if self.region.region_id != DEFAULT_REGION_ID:
+            notes.append(
+                "Regional demo data: road geometry is from OpenStreetMap, but elevation is a flat "
+                "50 m placeholder and hazard impacts, passability, and reliability are not calibrated."
+            )
+
+        # Comparative reliability language is only used for the validated flood
+        # benchmark. Demo probabilities must not be phrased as real survival gains.
+        if model_is_validated:
+            rel_gain = (primary_route.reliability - baseline_route.reliability) * 100.0
+            if rel_gain >= 0.5:
+                notes.append(f"SafeRoute delivers +{rel_gain:.1f}% greater reliability over conventional shortest path.")
+            elif primary_route.reliability > 0 and baseline_route.reliability > 0:
+                ratio = primary_route.reliability / baseline_route.reliability
+                if ratio >= 1.5:
+                    notes.append(f"SafeRoute achieves {ratio:.1f}× higher relative survival probability than conventional baseline.")
+            elif primary_route.reliability > 0 and baseline_route.reliability == 0:
+                notes.append("SafeRoute navigates elevated ground, avoiding impassable flooded segments that sever the baseline path.")
 
         # Check for impassable bottleneck segment
         w_p = primary_route.weakest_segment()
         if w_p and w_p.pass_probability < 0.50:
-            notes.append(
-                f"Severe bottleneck alert: Weakest segment on primary route has only {w_p.pass_probability:.1%} pass probability "
-                f"(water depth exceeds safe clearance). Corridor is physically hazardous for standard {request.vehicle}."
-            )
+            if model_is_validated:
+                notes.append(
+                    f"Severe bottleneck alert: Weakest segment on primary route has only {w_p.pass_probability:.1%} pass probability "
+                    f"(water depth exceeds safe clearance). Corridor is physically hazardous for standard {request.vehicle}."
+                )
+            elif not hazard_model.is_validated:
+                notes.append(
+                    f"Synthetic demo bottleneck: the illustrative model assigned {w_p.pass_probability:.1%} passability "
+                    "to the weakest primary segment. This is not an observed closure or safety assessment."
+                )
 
         return RouteResult(
             primary=primary_route,
             backup=backup_route,
             baseline=baseline_route,
             overlap_pct=overlap_pct,
-            simulated=request.hazard == "earthquake",
+            simulated=not model_is_validated,
             source=f"SafeRouteAI Risk-Aware Routing Engine ({hazard_model.display_name})",
             notes=notes,
         )

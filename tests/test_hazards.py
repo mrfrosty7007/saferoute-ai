@@ -29,6 +29,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
+from config import HAZARDS
 from saferoute.config import VEHICLES
 from saferoute.data import load_cached_graph
 from saferoute.hazard import (
@@ -64,6 +65,58 @@ class TestMultiHazardFramework(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             get_hazard_model("tsunami")
+
+    def test_synthetic_demo_hazards_are_deterministic_and_disclosed(self):
+        scenarios = {
+            "cyclone_demo": {
+                "wind_speed_dummy": 200.0,
+                "rainfall_dummy": 180.0,
+            },
+            "landslide_demo": {
+                "rainfall_dummy": 250.0,
+                "slope_susceptibility_dummy": 80.0,
+            },
+            "wildfire_demo": {
+                "fire_intensity_dummy": 8.0,
+                "fire_front_distance_dummy": 1.0,
+            },
+        }
+        minimum_inputs = {
+            "cyclone_demo": {"wind_speed_dummy": 60.0, "rainfall_dummy": 0.0},
+            "landslide_demo": {"rainfall_dummy": 0.0, "slope_susceptibility_dummy": 0.0},
+            "wildfire_demo": {"fire_intensity_dummy": 1.0, "fire_front_distance_dummy": 10.0},
+        }
+        for hazard_id, params in scenarios.items():
+            with self.subTest(hazard=hazard_id):
+                model = get_hazard_model(hazard_id)
+                self.assertFalse(model.is_validated)
+                self.assertIn("SYNTHETIC DEMO ONLY", model.description)
+                self.assertIn("SYNTHETIC DEMO ONLY", HAZARDS[hazard_id].note)
+                self.assertIn("Synthetic Demo", HAZARDS[hazard_id].label)
+
+                first = model.evaluate_risk(self.G, "ambulance", **params)
+                second = model.evaluate_risk(self.G, "ambulance", **params)
+                low = model.evaluate_risk(self.G, "ambulance", **minimum_inputs[hazard_id])
+                first_edges = list(first.edges(keys=True, data=True))
+                second_edges = list(second.edges(keys=True, data=True))
+                low_edges = list(low.edges(keys=True, data=True))
+                self.assertTrue(first_edges)
+                self.assertTrue(
+                    any(a[3]["hazard_severity"] > b[3]["hazard_severity"]
+                        for a, b in zip(first_edges, low_edges)),
+                    "Changing dummy intensity should change at least one synthetic edge score",
+                )
+                for edge_a, edge_b in zip(first_edges, second_edges):
+                    attrs_a, attrs_b = edge_a[3], edge_b[3]
+                    self.assertTrue(attrs_a["synthetic_demo_value"])
+                    self.assertIn("Synthetic demo impact index", attrs_a["hazard_label"])
+                    self.assertGreaterEqual(attrs_a["pass_probability"], 1e-6)
+                    self.assertLessEqual(attrs_a["pass_probability"], 1.0)
+                    self.assertEqual(attrs_a["pass_probability"], attrs_b["pass_probability"])
+
+                # Demo evaluation returns an enriched copy and leaves source edges alone.
+                original_edge = next(iter(self.G.edges(keys=True)))
+                self.assertNotIn("synthetic_demo_value", self.G[original_edge[0]][original_edge[1]][original_edge[2]])
 
     def test_flood_hazard_model_numerical_equivalence(self):
         """Verify FloodHazardModel outputs match Phase 2 passability() exactly."""

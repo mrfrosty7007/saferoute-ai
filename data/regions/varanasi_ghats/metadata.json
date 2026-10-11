@@ -1,0 +1,29 @@
+{
+  "region_id": "varanasi_ghats",
+  "display_name": "Varanasi Ghats & Old City",
+  "state": "Uttar Pradesh",
+  "district": "Varanasi",
+  "city": "Varanasi",
+  "ingestion_timestamp": "2026-10-11 12:07:06Z",
+  "ingestion_duration_sec": 1.11,
+  "node_count": 5029,
+  "edge_count": 12647,
+  "disconnected_nodes_removed": 522,
+  "elevation_nulls_filled": 5029,
+  "elevation_min_m": 50.0,
+  "elevation_max_m": 50.0,
+  "elevation_mean_m": 50.0,
+  "bridge_edges": 20,
+  "tunnel_edges": 2,
+  "actual_bounds": {
+    "min_lat": 25.2772239,
+    "max_lat": 25.3342943,
+    "min_lon": 82.970896,
+    "max_lon": 83.0417205
+  },
+  "data_provenance": "OpenStreetMap contributors via OSMnx",
+  "attribution": "Map data \u00a9 OpenStreetMap contributors, ODbL 1.0",
+  "source_osm_base": "2026-10-11T11:39:11Z",
+  "elevation_source": "Synthetic flat placeholder, 50.0 m at all nodes; no DEM data supplied",
+  "hazard_scope": "Synthetic demo only; hazard impacts, passability, and reliability are not calibrated for this region"
+}

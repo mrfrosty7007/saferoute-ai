@@ -7,6 +7,7 @@ bounding box calculations, and request validation under multi-region configurati
 """
 from __future__ import annotations
 
+import os
 import unittest
 
 from saferoute.regions import (
@@ -114,16 +115,37 @@ class TestRegionRegistry(unittest.TestCase):
     def test_validate_request_with_unavailable_region(self):
         """Confirm validate_request clearly reports unavailable expansion regions."""
         req = RouteRequest(
-            origin=Place("Kurla", 19.0657, 72.8794),
-            destination=Place("BKC", 19.0600, 72.8650),
+            origin=Place("Fancy Bazar", 26.1880, 91.7420),
+            destination=Place("Railway Station", 26.1810, 91.7510),
             vehicle="ambulance",
             hazard="flood",
             params={},
             severity="Moderate",
-            region_id="mumbai_kurla",
+            region_id="guwahati_brahmaputra",
         )
         errs = validate_request(req)
         self.assertTrue(any("currently unavailable" in e for e in errs))
+
+    def test_varanasi_registry_separates_routable_roads_from_synthetic_hazards(self):
+        region = registry.get("varanasi_ghats")
+        self.assertTrue(region.is_routable)
+        self.assertEqual(region.status, RegionStatus.SUPPORTED_LOCAL)
+        self.assertIn("dummy placeholder", region.status_description)
+        self.assertIn("Synthetic", region.hazard_model_availability)
+        self.assertEqual(region.supported_hazards, ())
+
+    def test_mumbai_and_delhi_are_routeable_demo_regions_with_local_assets(self):
+        for region_id in ("mumbai_kurla", "delhi_yamuna"):
+            with self.subTest(region=region_id):
+                region = registry.get(region_id)
+                self.assertEqual(region.status, RegionStatus.SUPPORTED_LOCAL)
+                self.assertTrue(region.is_routable)
+                self.assertTrue(os.path.isfile(region.graph_file))
+                self.assertTrue(os.path.isfile(region.depressions_file))
+                self.assertTrue(os.path.isfile(region.metadata_file))
+                self.assertEqual(region.supported_hazards, ())
+                self.assertIn("dummy placeholder", region.status_description)
+                self.assertIn("synthetic", region.status_description.lower())
 
     def test_daraganj_request_uses_explicit_bounds_without_degree_buffer(self):
         def request(origin):

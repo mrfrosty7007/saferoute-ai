@@ -1,0 +1,43 @@
+{
+  "region_id": "delhi_yamuna",
+  "display_name": "Yamuna Floodplain (Kashmere Gate)",
+  "state": "Delhi",
+  "district": "Central Delhi",
+  "city": "New Delhi",
+  "ingestion_timestamp": "2026-10-11 12:28:54Z",
+  "ingestion_duration_sec": 18.68,
+  "node_count": 16948,
+  "edge_count": 44507,
+  "disconnected_nodes_removed": 552,
+  "elevation_nulls_filled": 16948,
+  "elevation_min_m": 50.0,
+  "elevation_max_m": 50.0,
+  "elevation_mean_m": 50.0,
+  "bridge_edges": 458,
+  "tunnel_edges": 346,
+  "actual_bounds": {
+    "min_lat": 28.6300041,
+    "max_lat": 28.7099915,
+    "min_lon": 77.1900041,
+    "max_lon": 77.2699974
+  },
+  "data_provenance": "OpenStreetMap contributors via OSMnx",
+  "attribution": "Map data © OpenStreetMap contributors, ODbL 1.0",
+  "osm_source": {
+    "provider": "BBBike.org city extract, based on OpenStreetMap contributors",
+    "url": "https://download.bbbike.org/osm/bbbike/NewDelhi/NewDelhi.osm.gz",
+    "retrieved_at_utc": "2026-10-11T12:28:55Z",
+    "source_snapshot_timestamp": "Not provided with the downloaded city extract; retrieval time is not the OSM snapshot time",
+    "compressed_source_sha256": "589038a34fecf4aad47d05477eb1abdf800cea83226f17c87bebee248a53be43",
+    "clip_bounds_with_context": {
+      "min_lat": 28.63,
+      "max_lat": 28.71,
+      "min_lon": 77.19,
+      "max_lon": 77.27
+    },
+    "context_buffer_degrees": 0.01,
+    "attribution": "Map data © OpenStreetMap contributors, ODbL 1.0"
+  },
+  "elevation_source": "Synthetic flat placeholder, 50.0 m at all nodes; no DEM supplied",
+  "hazard_scope": "Synthetic demo only; hazard impacts, passability, and reliability are not calibrated for this region"
+}

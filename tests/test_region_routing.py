@@ -8,6 +8,7 @@ thread-safety, and synthetic multi-region routing.
 from __future__ import annotations
 
 import os
+import hashlib
 import shutil
 import tempfile
 import unittest
@@ -27,6 +28,7 @@ from saferoute.regions import (
 )
 from services.contracts import Place, RouteRequest, RoutingError
 from services.region_loader import RegionalEngineManager
+from services.real_engine import RealRoutingEngine
 from services.service import compute_routes
 
 
@@ -61,6 +63,68 @@ class TestRegionalRoutingIntegration(unittest.TestCase):
         self.assertIsNotNone(engine)
         self.assertEqual(engine.region.region_id, DEFAULT_REGION_ID)
         self.assertIn(DEFAULT_REGION_ID, self.mgr.cached_region_ids())
+
+    def test_varanasi_osm_region_routes_with_explicit_synthetic_disclosure(self):
+        """The checked-in OSM road graph is routeable, while its demo risks stay labeled synthetic."""
+        region = registry.get("varanasi_ghats")
+        self.assertTrue(region.is_routable)
+        self.assertTrue(os.path.isfile(region.graph_file))
+        self.assertTrue(os.path.isfile(region.depressions_file))
+
+        request = RouteRequest(
+            origin=Place("Assi Ghat", *region.landmarks["Assi Ghat"]),
+            destination=Place("Kashi Vishwanath Corridor", *region.landmarks["Kashi Vishwanath Corridor"]),
+            vehicle="ambulance",
+            hazard="flood",
+            params={"river_level": 82.0, "rainfall": 20.0},
+            severity="Moderate",
+            region_id=region.region_id,
+        )
+        result = compute_routes(request, self.mgr.get_engine(region.region_id))
+
+        self.assertIsNotNone(result.primary)
+        self.assertTrue(result.simulated)
+        self.assertTrue(any("synthetic placeholders" in note for note in result.notes))
+        self.assertTrue(any("flat 50 m placeholder" in note for note in result.notes))
+
+    def test_mumbai_and_delhi_osm_regions_route_with_synthetic_disclosure(self):
+        """Bundled city extracts route locally, while modeled hazard output stays synthetic."""
+        for region_id in ("mumbai_kurla", "delhi_yamuna"):
+            with self.subTest(region=region_id):
+                region = registry.get(region_id)
+                request = RouteRequest(
+                    origin=Place("Origin", *region.default_origin),
+                    destination=Place("Destination", *region.default_dest),
+                    vehicle="ambulance",
+                    hazard="flood",
+                    params={"river_level": 82.0, "rainfall": 45.0},
+                    severity="Moderate",
+                    region_id=region_id,
+                )
+                result = compute_routes(request, self.mgr.get_engine(region_id))
+                self.assertIsNotNone(result.primary)
+                self.assertTrue(result.simulated)
+                self.assertTrue(any("Regional demo data" in note for note in result.notes))
+                self.assertGreater(result.primary.distance_km, 0.0)
+
+    def test_missing_regional_depression_cache_does_not_overwrite_default(self):
+        graph_file = self._make_dummy_graph_file("regional_cache.graphml")
+        cache_file = os.path.join(self.temp_dir, "regional_depressions.pkl")
+        region = RegionMetadata(
+            region_id="test_region_cache_scope", display_name="Cache Scope", state="S", district="D", city="C",
+            center_lat=13.0, center_lon=80.0, radius_meters=1000.0,
+            bounds=BoundingBox(12.9, 13.1, 79.9, 80.1), status=RegionStatus.SUPPORTED_LOCAL,
+            status_description="Test region", graph_file=graph_file, depressions_file=cache_file,
+        )
+        with open(os.path.join("data", "depressions.pkl"), "rb") as f:
+            baseline_digest = hashlib.sha256(f.read()).digest()
+
+        engine = RealRoutingEngine(G_base=ox.load_graphml(graph_file), region=region)
+
+        self.assertTrue(os.path.isfile(cache_file))
+        self.assertEqual(engine.region.region_id, region.region_id)
+        with open(os.path.join("data", "depressions.pkl"), "rb") as f:
+            self.assertEqual(hashlib.sha256(f.read()).digest(), baseline_digest)
 
     def test_lru_cache_eviction(self):
         """Confirm LRU cache evicts oldest region when max capacity is exceeded."""
@@ -108,7 +172,7 @@ class TestRegionalRoutingIntegration(unittest.TestCase):
     def test_unavailable_region_raises_routing_error(self):
         """Confirm requesting uningested region raises informative RoutingError."""
         with self.assertRaises(RoutingError) as ctx:
-            self.mgr.get_engine("mumbai_kurla")
+            self.mgr.get_engine("chennai_adyar")
         self.assertIn("unavailable", str(ctx.exception).lower())
 
     def test_missing_graph_file_raises_routing_error(self):

@@ -176,8 +176,28 @@ class TestTeammateUIAdapter(unittest.TestCase):
         self.assertIsNotNone(result.baseline)
         self.assertTrue(result.simulated)
 
-        # Confirm note flags exploratory scenario simulation
-        self.assertTrue(any("Exploratory scenario simulation" in note for note in result.notes))
+        # Confirm note flags synthetic demo assumptions
+        self.assertTrue(any("SYNTHETIC DEMO ONLY" in note for note in result.notes))
+
+    def test_synthetic_wildfire_demo_routes_are_prominently_disclosed(self):
+        req = RouteRequest(
+            origin=self.origin_place,
+            destination=self.dest_place,
+            vehicle="ambulance",
+            hazard="wildfire_demo",
+            params={
+                "fire_intensity_dummy": 8.0,
+                "fire_front_distance_dummy": 1.0,
+            },
+            severity="Moderate",
+        )
+        result = compute_routes(req, self.engine)
+
+        self.assertTrue(result.simulated)
+        self.assertIsNotNone(result.primary)
+        self.assertTrue(any("SYNTHETIC DEMO ONLY" in note for note in result.notes))
+        self.assertFalse(any("greater reliability" in note for note in result.notes))
+        self.assertIn("Synthetic Demo", HAZARDS[req.hazard].label)
 
     def test_vehicle_differentiation_via_adapter(self):
         """Confirm Rescue Truck achieves higher baseline reliability than Ambulance in flood."""
@@ -247,6 +267,21 @@ class TestTeammateUIAdapter(unittest.TestCase):
         html_req = m_req.get_root().render()
         self.assertIn("Origin: Sangam Confluence Ghat", html_req)
         self.assertIn("Destination: Alop Shankari Devi Temple", html_req)
+
+        from saferoute.regions import registry
+        varanasi = registry.get("varanasi_ghats")
+        varanasi_req = RouteRequest(
+            origin=Place("Assi Ghat", *varanasi.landmarks["Assi Ghat"]),
+            destination=Place("Kashi Vishwanath Corridor", *varanasi.landmarks["Kashi Vishwanath Corridor"]),
+            vehicle="ambulance",
+            hazard="flood",
+            params={},
+            severity="Moderate",
+            region_id=varanasi.region_id,
+        )
+        varanasi_map = build_study_area_map(varanasi_req).get_root().render()
+        self.assertIn("SYNTHETIC DEMO ONLY", varanasi_map)
+        self.assertIn("Dummy terrain and hazard values", varanasi_map)
 
     def test_build_route_map_rendering(self):
         """Confirm build_map renders polylines, legend, and risk layers cleanly."""

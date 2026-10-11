@@ -66,7 +66,7 @@ _BUILTIN_REGIONS: List[RegionMetadata] = [
         ],
     ),
 
-    # 2. Planned / Expansion Regions across Indian States (Explicitly Marked UNAVAILABLE)
+    # 2. Local OSM road graphs for synthetic routing demos; hazard/elevation data remain uncalibrated.
     RegionMetadata(
         region_id="varanasi_ghats",
         display_name="Varanasi Ghats & Old City",
@@ -77,9 +77,14 @@ _BUILTIN_REGIONS: List[RegionMetadata] = [
         center_lon=83.0100,
         radius_meters=3000.0,
         bounds=BoundingBox(min_lat=25.280, max_lat=25.335, min_lon=82.980, max_lon=83.040),
-        status=RegionStatus.UNAVAILABLE,
-        status_description="Planned expansion region. Road graph not yet ingested into local repository.",
+        status=RegionStatus.SUPPORTED_LOCAL,
+        status_description=(
+            "Routeable OpenStreetMap road graph. Elevation is a flat 50 m dummy placeholder; "
+            "all hazard impacts, passability, and reliability are synthetic demo values, not emergency guidance."
+        ),
         graph_file=os.path.join(_REPO_ROOT, "data", "regions", "varanasi_ghats", "graph.graphml"),
+        depressions_file=os.path.join(_REPO_ROOT, "data", "regions", "varanasi_ghats", "depressions.pkl"),
+        metadata_file=os.path.join(_REPO_ROOT, "data", "regions", "varanasi_ghats", "metadata.json"),
         landmarks={
             "Dashashwamedh Ghat": (25.3073, 83.0104),
             "Assi Ghat": (25.2885, 83.0064),
@@ -87,12 +92,15 @@ _BUILTIN_REGIONS: List[RegionMetadata] = [
         },
         default_origin=(25.2885, 83.0064),
         default_dest=(25.3109, 83.0107),
-        supported_hazards=("flood",),
-        elevation_availability="Pending SRTM ingestion",
-        hazard_model_availability="Pending calibration",
-        data_provenance="Not ingested",
-        version="0.1.0",
-        notes=["Target region for Gangetic urban flooding expansion."],
+        supported_hazards=(),
+        elevation_availability="Synthetic flat 50 m placeholder; no DEM data",
+        hazard_model_availability="Synthetic demo only; no calibrated regional hazard model",
+        data_provenance="OpenStreetMap contributors via OSMnx; extract timestamp recorded in metadata.json",
+        version="0.2.0",
+        notes=[
+            "OSM road extract snapshot is recorded in metadata.json.",
+            "All node elevations are flat 50 m placeholders; no regional hazard is calibrated.",
+        ],
     ),
     RegionMetadata(
         region_id="mumbai_kurla",
@@ -104,9 +112,14 @@ _BUILTIN_REGIONS: List[RegionMetadata] = [
         center_lon=72.8800,
         radius_meters=3500.0,
         bounds=BoundingBox(min_lat=19.040, max_lat=19.100, min_lon=72.850, max_lon=72.915),
-        status=RegionStatus.UNAVAILABLE,
-        status_description="Planned expansion region. Road graph not yet ingested into local repository.",
+        status=RegionStatus.SUPPORTED_LOCAL,
+        status_description=(
+            "Routeable OpenStreetMap road graph for a local demo. Elevation is a flat 50 m dummy placeholder; "
+            "hazard impacts, passability, and reliability are synthetic, not emergency guidance."
+        ),
         graph_file=os.path.join(_REPO_ROOT, "data", "regions", "mumbai_kurla", "graph.graphml"),
+        depressions_file=os.path.join(_REPO_ROOT, "data", "regions", "mumbai_kurla", "depressions.pkl"),
+        metadata_file=os.path.join(_REPO_ROOT, "data", "regions", "mumbai_kurla", "metadata.json"),
         landmarks={
             "Kurla West Station": (19.0657, 72.8794),
             "BKC G-Block": (19.0600, 72.8650),
@@ -114,12 +127,15 @@ _BUILTIN_REGIONS: List[RegionMetadata] = [
         },
         default_origin=(19.0657, 72.8794),
         default_dest=(19.0600, 72.8650),
-        supported_hazards=("flood",),
-        elevation_availability="Pending SRTM ingestion",
-        hazard_model_availability="Pending tidal/rainfall calibration",
-        data_provenance="Not ingested",
-        version="0.1.0",
-        notes=["Target region for Mithi river overflow and coastal rain ponding."],
+        supported_hazards=(),
+        elevation_availability="Synthetic flat 50 m placeholder; no DEM data",
+        hazard_model_availability="Synthetic demo only; no calibrated regional hazard model",
+        data_provenance="OpenStreetMap contributors via BBBike Bombay extract; clipped to the Kurla corridor",
+        version="0.2.0",
+        notes=[
+            "OSM source extract and checksum are recorded in metadata.json; the provider did not state its source snapshot timestamp.",
+            "All node elevations are flat 50 m placeholders; no regional hazard is calibrated.",
+        ],
     ),
     RegionMetadata(
         region_id="delhi_yamuna",
@@ -131,9 +147,14 @@ _BUILTIN_REGIONS: List[RegionMetadata] = [
         center_lon=77.2300,
         radius_meters=3000.0,
         bounds=BoundingBox(min_lat=28.640, max_lat=28.700, min_lon=77.200, max_lon=77.260),
-        status=RegionStatus.UNAVAILABLE,
-        status_description="Planned expansion region. Road graph not yet ingested into local repository.",
+        status=RegionStatus.SUPPORTED_LOCAL,
+        status_description=(
+            "Routeable OpenStreetMap road graph for a local demo. Elevation is a flat 50 m dummy placeholder; "
+            "hazard impacts, passability, and reliability are synthetic, not emergency guidance."
+        ),
         graph_file=os.path.join(_REPO_ROOT, "data", "regions", "delhi_yamuna", "graph.graphml"),
+        depressions_file=os.path.join(_REPO_ROOT, "data", "regions", "delhi_yamuna", "depressions.pkl"),
+        metadata_file=os.path.join(_REPO_ROOT, "data", "regions", "delhi_yamuna", "metadata.json"),
         landmarks={
             "Kashmere Gate ISBT": (28.6675, 77.2290),
             "Old Delhi Railway Station": (28.6619, 77.2274),
@@ -141,12 +162,15 @@ _BUILTIN_REGIONS: List[RegionMetadata] = [
         },
         default_origin=(28.6675, 77.2290),
         default_dest=(28.6619, 77.2274),
-        supported_hazards=("flood",),
-        elevation_availability="Pending SRTM ingestion",
-        hazard_model_availability="Pending calibration",
-        data_provenance="Not ingested",
-        version="0.1.0",
-        notes=["Target region for Yamuna high discharge inundation."],
+        supported_hazards=(),
+        elevation_availability="Synthetic flat 50 m placeholder; no DEM data",
+        hazard_model_availability="Synthetic demo only; no calibrated regional hazard model",
+        data_provenance="OpenStreetMap contributors via BBBike New Delhi extract; clipped to the Yamuna corridor",
+        version="0.2.0",
+        notes=[
+            "OSM source extract and checksum are recorded in metadata.json; the provider did not state its source snapshot timestamp.",
+            "All node elevations are flat 50 m placeholders; no regional hazard is calibrated.",
+        ],
     ),
     RegionMetadata(
         region_id="chennai_adyar",

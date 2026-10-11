@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from config import HAZARDS, ROUTE_COLORS, ROUTE_LABELS, STUDY_AREA_NAME, VEHICLES, hazard_intensity
+from saferoute.regions import DEFAULT_REGION_ID
 from services.contracts import HIGH_RISK_THRESHOLD, RouteRequest, RouteResult
 
 
@@ -39,7 +40,7 @@ def banners(result: RouteResult | None, errors: list | None) -> None:
         return
     if result.simulated:
         st.markdown(
-            f'<div class="sim"><b>Simulated scenario data.</b> Risk, reliability and ETA values come from a simulated model. {escape(result.source)}.</div>',
+            f'<div class="sim"><b>SYNTHETIC DEMO ONLY — NOT FOR EMERGENCY USE.</b> Hazard inputs, segment impacts, passability and reliability are dummy values from an illustrative model, not observations or forecasts. ETA is a graph-based estimate without live traffic. {escape(result.source)}.</div>',
             unsafe_allow_html=True,
         )
     for n in result.notes:
@@ -139,9 +140,15 @@ def incident_panel(request: RouteRequest | None) -> None:
         _panel("Incident", '<div class="sub">Complete the origin and destination to define a scenario.</div>')
         return
     hz = HAZARDS[request.hazard]
-    rows = [("Hazard", hz.label), ("Incident classification", request.severity), ("Vehicle", VEHICLES[request.vehicle].label)]
+    synthetic_region = request.region_id != DEFAULT_REGION_ID
+    synthetic_inputs = not hz.is_validated or synthetic_region
+    hazard_label = f"{hz.label} — Regional Synthetic Demo" if synthetic_region else hz.label
+    rows = [("Hazard", hazard_label), ("Incident classification", request.severity), ("Vehicle", VEHICLES[request.vehicle].label)]
+    if synthetic_inputs:
+        rows.append(("Input provenance", "SYNTHETIC DUMMY VALUES — not observations"))
     for p in hz.params:
-        rows.append((p.label, f"{request.params.get(p.key, p.default):g} {p.unit}"))
+        label = f"{p.label} (dummy)" if synthetic_inputs else p.label
+        rows.append((label, f"{request.params.get(p.key, p.default):g} {p.unit}"))
     rows += [
         ("Combined intensity", f"{hazard_intensity(request.hazard, request.params):.0%}"),
         ("Origin", request.origin.name),
@@ -196,7 +203,7 @@ def route_table(result: RouteResult | None) -> None:
 
 
 def elevation_profile(result: RouteResult | None) -> None:
-    """Plot DEM-derived elevations sampled at successive route graph nodes."""
+    """Plot elevations sampled at successive route graph nodes."""
     if result is None:
         return
     available = {
@@ -210,4 +217,7 @@ def elevation_profile(result: RouteResult | None) -> None:
     label = st.selectbox("Profile route", list(available), key="profile_route")
     data = pd.DataFrame(available[label].elevation_profile, columns=["Distance (km)", "Elevation (m)"])
     st.line_chart(data, x="Distance (km)", y="Elevation (m)", height=250)
-    st.caption("Elevation samples are from road-network nodes; the line between samples is illustrative.")
+    if any("flat 50 m placeholder" in note for note in result.notes):
+        st.caption("DUMMY ELEVATION PROFILE: every road node is assigned 50 m; this is not terrain or DEM data.")
+    else:
+        st.caption("Elevation samples are from road-network nodes; the line between samples is illustrative.")

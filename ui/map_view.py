@@ -93,7 +93,12 @@ def build_study_area_map(request: RouteRequest | None = None) -> folium.Map:
         radius = region.radius_m
         area_title = f"{region.display_name} ({region.district}, {region.state})"
         radius_km = int(round(radius / 1000.0))
-        area_desc = f"Operational radius: {radius_km} km | Status: {region.status.name}"
+        status = "VALIDATED PILOT" if reg_id == "daraganj_prayagraj" else (
+            "SYNTHETIC DEMO ONLY" if region.is_routable else region.status.name
+        )
+        area_desc = f"Operational radius: {radius_km} km | Status: {status}"
+        if region.is_routable and reg_id != "daraganj_prayagraj":
+            area_desc += " | Dummy terrain and hazard values; not for emergency use"
     else:
         center = list(STUDY_AREA_CENTER)
         radius = STUDY_AREA_RADIUS_M

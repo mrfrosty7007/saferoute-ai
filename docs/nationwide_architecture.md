@@ -11,7 +11,7 @@ The nationwide road network is too large to treat as one bundled application ass
 1. **Administrative Catalog & Registry**: A lightweight registry of the states, districts, and study regions currently declared in `saferoute/regions/registry.py`. It is an extensible subset, not a complete catalog of India.
 2. **On-Demand Dynamic Asset Loading**: Graph assets (`.graphml` / `.pkl`) and precomputed topographic depression models are loaded into memory only when an emergency route is requested in that specific study area.
 3. **Regional Engine Cache**: The `RegionalEngineManager` retains at most two engine entries and calls garbage collection after eviction. This bounds its own cache entries, not process RSS: active requests, Python objects, native libraries, and allocator behavior affect total memory. No deployment memory ceiling is claimed.
-4. **Honest Coverage Status**: Nationwide-capable architecture is strictly distinguished from nationwide data availability. Regions without validated, ingested assets are explicitly marked `UNAVAILABLE` or `PARTIAL`, preventing misleading route claims.
+4. **Honest Coverage Status**: Nationwide-capable architecture is strictly distinguished from nationwide data availability. Daraganj is the only calibrated hazard-model pilot. Varanasi's checked-in OSM road extract is usable for a synthetic demo only; its terrain/elevation and hazard impacts are dummy values. Other declared regions remain `UNAVAILABLE`.
 
 ```
                               [ India Nationwide Catalog ]
@@ -19,12 +19,14 @@ The nationwide road network is too large to treat as one bundled application ass
                     ┌───────────────────────┴───────────────────────┐
              [ Uttar Pradesh ]                               [ Maharashtra ]
                     │                                               │
-             [ Prayagraj ]                                    [ Mumbai Suburban ]
+             [ Prayagraj / Varanasi ]                          [ Mumbai Suburban ]
                     │                                               │
-     [ Daraganj Riverfront Pilot ]                           [ Kurla Mithi Basin ]
-       Status: SUPPORTED_BUNDLED                               Status: UNAVAILABLE
-       Assets: data/graph.graphml + depressions.pkl              Assets: Not yet ingested
-       (1,823 nodes, 4,740 edges)
+       ┌────────────┴──────────┐                           [ Kurla Mithi Basin ]
+       │                       │                               Status: UNAVAILABLE
+ [ Daraganj Pilot ]     [ Varanasi Demo ]                    Assets: Not yet ingested
+ SUPPORTED_BUNDLED       SUPPORTED_LOCAL
+ Validated flood         OSM roads; dummy 50 m elevations
+ model                   and synthetic hazard outputs
 ```
 
 ---
@@ -35,7 +37,7 @@ Defined in [`saferoute/regions/models.py`](../saferoute/regions/models.py) and [
 
 ### Region Lifecycle Status (`RegionStatus`)
 - `SUPPORTED_BUNDLED`: Fully ingested, validated, and packaged with production assets. Serves as the golden regression baseline (`daraganj_prayagraj`).
-- `SUPPORTED_LOCAL`: Ingested, validated, and stored in the local data directory. Routable.
+- `SUPPORTED_LOCAL`: Road graph ingested, locally stored, and routable. Hazard and terrain validation are region-specific; routable does not mean a calibrated emergency model is available.
 - `PARTIAL`: Ingested with limitations (e.g., road network present, but elevation or flood depression model pending).
 - `UNAVAILABLE`: Planned catalog entry. Explicitly non-routable until ingestion and verification are performed.
 
@@ -46,6 +48,12 @@ $$\Delta y_{\text{meters}} = \Delta \text{lat} \times 111,320$$
 Every `RegionMetadata` instance dynamically calculates its regional metric projection factors based on its local `center_lat`, eliminating distance distortion outside Uttar Pradesh.
 
 Coordinate requests must first lie inside the region's explicit bounding box. They are then snapped only when the nearest road is within the region's configurable `snap_tolerance_m` (500 m by default); otherwise routing returns a clear error.
+
+### Current routeable assets
+- **Daraganj, Prayagraj** (`SUPPORTED_BUNDLED`): validated pilot graph and elevation/depression assets.
+- **Varanasi Ghats** (`SUPPORTED_LOCAL`, demo only): OpenStreetMap extract timestamped `2026-10-11T11:39:11Z`; the retained largest strongly connected component has 5,029 nodes and 12,647 directed edges. Every node uses a flat dummy elevation of 50 m. The app labels the region as demo-only and marks hazard/passability/reliability output synthetic. No flood, earthquake, cyclone, landslide, or wildfire model is calibrated for Varanasi.
+- **Mumbai Kurla** (`SUPPORTED_LOCAL`, demo only): BBBike Bombay city extract, spatially clipped to the corridor and 0.01° context; retained largest strongly connected component has 20,685 nodes and 49,281 directed edges. **Delhi Yamuna** (`SUPPORTED_LOCAL`, demo only): BBBike New Delhi extract, clipped the same way; 16,948 nodes and 44,507 directed edges. Both use flat dummy 50 m elevations and synthetic hazard/passability/reliability output. Their `metadata.json` files record the source URL, retrieval time, compressed-source SHA-256, clip bounds, and ODbL attribution. BBBike did not include an exact OSM source snapshot timestamp with these downloads.
+- Chennai, Bengaluru, and Guwahati still have no checked-in road graph and remain unavailable.
 
 ---
 
@@ -66,7 +74,7 @@ Defined in [`saferoute/ingestion/pipeline.py`](../saferoute/ingestion/pipeline.p
    - Evaluates road segment depressions within a configurable radius (default: 300m).
    - Generates schema v2 `depressions.pkl` for fast, real-time flood water depth calculations.
 5. **Metadata Provenance**:
-   - Generates `metadata.json` with the ingestion timestamp and duration, graph counts, removed-node and elevation-fill counts, elevation summary, bridge/tunnel counts, actual graph bounds, a general OSMnx provenance label, and OSM attribution. It does not record the source-data OSM timestamp, a specific DEM source, or validation checksums.
+   - The generic ingestion pipeline generates `metadata.json` with the ingestion timestamp and duration, graph counts, removed-node and elevation-fill counts, elevation summary, bridge/tunnel counts, actual graph bounds, a general OSMnx provenance label, and OSM attribution. It does not automatically capture a source-data OSM timestamp, DEM source, or validation checksums. Varanasi separately records its OSM snapshot timestamp. Mumbai and Delhi record the source download URL, retrieval time, compressed-source checksum, clip bounds, ODbL attribution, and the fact that the exact OSM snapshot time was not supplied. All three demo assets explicitly identify their dummy elevation source.
 
 ---
 
@@ -77,22 +85,22 @@ Open [`saferoute/regions/registry.py`](../saferoute/regions/registry.py) and add
 
 ```python
 RegionMetadata(
-    region_id="varanasi_ghats",
-    display_name="Varanasi Ghats & Old City",
-    state="Uttar Pradesh",
-    district="Varanasi",
-    city="Varanasi",
-    center_lat=25.3176,
-    center_lon=83.0064,
+    region_id="example_city_corridor",
+    display_name="Example City Corridor",
+    state="Example State",
+    district="Example District",
+    city="Example City",
+    center_lat=20.0000,
+    center_lon=75.0000,
     radius_meters=2500.0,
     bounds=BoundingBox(
-        min_lat=25.295, max_lat=25.340,
-        min_lon=82.980, max_lon=83.030,
+        min_lat=19.980, max_lat=20.020,
+        min_lon=74.980, max_lon=75.020,
     ),
-    graph_file="data/regions/varanasi_ghats/graph.graphml",
-    depressions_file="data/regions/varanasi_ghats/depressions.pkl",
+    graph_file="data/regions/example_city_corridor/graph.graphml",
+    depressions_file="data/regions/example_city_corridor/depressions.pkl",
     status=RegionStatus.UNAVAILABLE,  # Mark UNAVAILABLE until ingested
-    status_description="Planned pilgrimage flood corridor along the Ganges.",
+    status_description="Example area; route only after road graph and bounds are checked.",
     data_provenance="OpenStreetMap contributors via OSMnx",
 )
 ```
@@ -109,7 +117,7 @@ python scripts/ingest_region.py --region varanasi_ghats --validate-only
 New regional graph preparation currently requires calling `RegionIngestionPipeline.process_and_save` from offline Python code with a supplied graph and elevation data.
 
 ### Step 3: Update Region Status
-Only after required assets exist and their region bounds, graph, elevations, and hazard calibration have been verified should the registry status be changed to a routable value. The validation-only CLI currently checks asset presence, not semantic completeness or safety.
+Set a region to a routable status only after its road graph and bounds are verified. That enables route demonstrations, not calibrated hazard decisions: if terrain or hazard models are placeholders, label every associated input, profile, impact, and reliability result synthetic in the registry and UI. The validation-only CLI checks asset presence, not semantic completeness or safety.
 
 ---
 
@@ -118,8 +126,12 @@ Only after required assets exist and their region bounds, graph, elevations, and
 | Hazard Model | Status | Description | Limitations |
 | :--- | :--- | :--- | :--- |
 | **Monsoon Flood** | **Implemented (Physics Model)** | Hydraulic depression ponding, gauge-relative river stage, rainfall runoff, vehicle-specific water depth clearance curves. | Relies on precomputed static depression terrain and uniform rainfall assumptions. Does not incorporate 2D hydrodynamic flow equations. |
-| **Earthquake Debris** | **Exploratory Scenario** | Distance-attenuated Modified Mercalli Intensity (MMI), structural vulnerability debris probabilities. | Stylized engineering vulnerability proxy for emergency simulations; not a seismological prediction or structural collapse forecast. |
-| **Cyclone / Landslide / Wildfire** | **Unimplemented** | Not implemented. Clearly labeled in UI and rejected if requested. | Will not fabricate synthetic routing for unmodeled hazards. |
+| **Earthquake Debris** | **Synthetic Demo** | Dummy MMI and debris inputs drive a stylized edge-impact score. | Not an observation, forecast, seismological prediction, structural-collapse forecast, or emergency safety assessment. |
+| **Cyclone** | **Synthetic Demo** | Dummy wind/rain inputs drive an illustrative edge-impact index. | No cyclone, surge, or weather observations; not calibrated or suitable for emergency decisions. |
+| **Landslide** | **Synthetic Demo** | Dummy rainfall/susceptibility inputs and a simple graph-slope proxy drive an illustrative edge-impact index. | No landslide inventory or warning data; not calibrated or suitable for emergency decisions. |
+| **Wildfire** | **Synthetic Demo** | Dummy intensity/distance inputs and available map-tag proxies drive an illustrative edge-impact index. | No active fire perimeter or detection data; not calibrated or suitable for emergency decisions. |
+
+All synthetic demo controls and outputs are labeled in the dashboard. They demonstrate how scenario inputs can alter route selection; they do not represent real hazard likelihood, segment passability, reliability, or safe emergency routes. ETA remains a graph-based estimate without live traffic.
 
 ---
 

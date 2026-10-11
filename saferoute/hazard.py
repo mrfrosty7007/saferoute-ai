@@ -14,6 +14,9 @@ Supported Hazard Models:
    - Models ground shaking attenuation, narrow urban street masonry collapse,
      bridge structural inspection cautions, and vehicle-specific rubble clearance.
    - Clearly documented as an exploratory scenario tool, NOT a live seismic forecast.
+3. CycloneDemoHazardModel, LandslideDemoHazardModel, WildfireDemoHazardModel:
+   - Synthetic UI demonstrations using invented inputs and illustrative edge scores.
+   - Not calibrated models, observations, forecasts, or emergency-routing advice.
 """
 
 import math
@@ -247,8 +250,8 @@ class EarthquakeHazardModel(HazardModel):
     hazard_id = "earthquake"
     display_name = "Earthquake Debris Model (Scenario Simulation)"
     description = (
-        "Scenario-based simulation modeling ground shaking attenuation, narrow-street masonry debris "
-        "blockage, and bridge inspection restrictions in Daraganj. [Simulated Demo Model]"
+        "SYNTHETIC DEMO ONLY: invented shaking/debris inputs drive a stylized edge-impact score; "
+        "not an observation, forecast, or emergency safety assessment."
     )
     is_validated = False
 
@@ -401,10 +404,125 @@ class EarthquakeHazardModel(HazardModel):
         return G_copy
 
 
+class SyntheticDemoHazardModel(HazardModel):
+    """Base for deliberately synthetic hazards used only to demonstrate routing UI.
+
+    These scores are not calibrated, observed, or suitable for emergency decisions.
+    The small deterministic edge variation is a teaching aid, not a physical model.
+    """
+
+    is_validated = False
+    geographic_coverage = "Synthetic demo only; no operational geographic validation"
+
+    def _apply_demo_scores(
+        self,
+        G: nx.MultiDiGraph,
+        vehicle: str,
+        intensity: float,
+        exposure_for_edge,
+    ) -> nx.MultiDiGraph:
+        if vehicle not in VEHICLES:
+            raise ValueError(f"Unknown vehicle '{vehicle}'. Must be one of: {list(VEHICLES.keys())}")
+
+        G_copy = G.copy()
+        prob_attr = f"pass_probability_{vehicle}"
+        for u, v, _key, data in G_copy.edges(keys=True, data=True):
+            exposure = max(0.0, min(1.0, float(exposure_for_edge(u, v, data))))
+            # Deliberately simple illustrative index. Every value produced by this
+            # class is synthetic even when it uses a real graph attribute as input.
+            score = max(0.0, min(85.0, 5.0 + 75.0 * intensity * (0.25 + 0.75 * exposure)))
+            probability = max(PROBABILITY_EPSILON, min(1.0, 1.0 - score / 100.0))
+            data.update(
+                {
+                    "water_depth_cm": 0.0,
+                    "hazard_type": self.hazard_id,
+                    "hazard_severity": round(score, 1),
+                    "hazard_label": f"Synthetic demo impact index {score:.1f}/100",
+                    "synthetic_demo_value": True,
+                    "pass_probability": probability,
+                    prob_attr: probability,
+                    "closed": bool(probability < 0.5),
+                }
+            )
+        return G_copy
+
+    @staticmethod
+    def _highway(data: dict) -> str:
+        value = data.get("highway", "unclassified")
+        if isinstance(value, list):
+            value = value[0] if value else "unclassified"
+        return str(value).lower()
+
+
+class CycloneDemoHazardModel(SyntheticDemoHazardModel):
+    hazard_id = "cyclone_demo"
+    display_name = "Cyclone (Synthetic Demo)"
+    description = "SYNTHETIC DEMO ONLY: invented wind/rain inputs and impact indices; not a forecast or emergency-routing assessment."
+
+    def evaluate_risk(self, G: nx.MultiDiGraph, vehicle: str, wind_speed_dummy: float = 160.0,
+                      rainfall_dummy: float = 100.0, **kwargs: Any) -> nx.MultiDiGraph:
+        wind = max(0.0, min(1.0, (float(wind_speed_dummy) - 60.0) / 180.0))
+        rain = max(0.0, min(1.0, float(rainfall_dummy) / 250.0))
+        intensity = 0.65 * wind + 0.35 * rain
+
+        def exposure(_u, _v, data):
+            highway = self._highway(data)
+            return 0.8 if is_bridge(data) else 0.65 if highway in {"residential", "service", "unclassified"} else 0.4
+
+        return self._apply_demo_scores(G, vehicle, intensity, exposure)
+
+
+class LandslideDemoHazardModel(SyntheticDemoHazardModel):
+    hazard_id = "landslide_demo"
+    display_name = "Landslide (Synthetic Demo)"
+    description = "SYNTHETIC DEMO ONLY: invented rainfall/susceptibility inputs and a simple graph-slope proxy; not a landslide forecast."
+
+    def evaluate_risk(self, G: nx.MultiDiGraph, vehicle: str, rainfall_dummy: float = 180.0,
+                      slope_susceptibility_dummy: float = 55.0, **kwargs: Any) -> nx.MultiDiGraph:
+        rain = max(0.0, min(1.0, float(rainfall_dummy) / 300.0))
+        susceptibility = max(0.0, min(1.0, float(slope_susceptibility_dummy) / 100.0))
+        intensity = 0.5 * rain + 0.5 * susceptibility
+
+        def exposure(u, v, data):
+            length = max(1.0, float(data.get("length", 1.0)))
+            elev_u = float(G.nodes[u].get("elevation", 0.0) or 0.0)
+            elev_v = float(G.nodes[v].get("elevation", 0.0) or 0.0)
+            grade = min(1.0, abs(elev_v - elev_u) / length / 0.12)
+            highway = self._highway(data)
+            road_factor = 0.7 if highway in {"residential", "service", "unclassified"} else 0.45
+            return 0.6 * grade + 0.4 * road_factor
+
+        return self._apply_demo_scores(G, vehicle, intensity, exposure)
+
+
+class WildfireDemoHazardModel(SyntheticDemoHazardModel):
+    hazard_id = "wildfire_demo"
+    display_name = "Wildfire (Synthetic Demo)"
+    description = "SYNTHETIC DEMO ONLY: invented fire intensity/distance and map-tag proxies; no live fire perimeter or detection is used."
+
+    def evaluate_risk(self, G: nx.MultiDiGraph, vehicle: str, fire_intensity_dummy: float = 6.0,
+                      fire_front_distance_dummy: float = 2.0, **kwargs: Any) -> nx.MultiDiGraph:
+        fire = max(0.0, min(1.0, (float(fire_intensity_dummy) - 1.0) / 9.0))
+        proximity = max(0.0, min(1.0, 1.0 - (float(fire_front_distance_dummy) / 10.0)))
+        intensity = fire * proximity
+
+        def exposure(_u, _v, data):
+            tags = " ".join(str(data.get(key, "")) for key in ("natural", "landuse", "surface")).lower()
+            if any(token in tags for token in ("wood", "forest", "scrub", "grass")):
+                return 1.0
+            highway = self._highway(data)
+            return 0.7 if highway in {"residential", "service", "unclassified"} else 0.45
+
+        return self._apply_demo_scores(G, vehicle, intensity, exposure)
+
+
 # Registry of available hazard models
 AVAILABLE_HAZARDS: Dict[str, Type[HazardModel]] = {
     "flood": FloodHazardModel,
     "earthquake": EarthquakeHazardModel,
+    "cyclone_demo": CycloneDemoHazardModel,
+    "landslide_demo": LandslideDemoHazardModel,
+    "wildfire_demo": WildfireDemoHazardModel,
 }
 
 
@@ -413,7 +531,7 @@ def get_hazard_model(hazard_type: str, **kwargs: Any) -> HazardModel:
     Factory function to retrieve and instantiate a configured HazardModel.
 
     Args:
-        hazard_type: Identifier ('flood' or 'earthquake').
+        hazard_type: Identifier registered in AVAILABLE_HAZARDS.
         **kwargs: Arguments passed to the model constructor.
 
     Returns:

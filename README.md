@@ -6,7 +6,7 @@
 
 Rakshapath explores how hazard-aware routing can support emergency response during natural disasters across India. Its verified foundational pilot is the Daraganj riverbank corridor in Prayagraj, Uttar Pradesh. It combines cached OpenStreetMap road networks, terrain elevations, and scenario-based hazard models to compare routes for different emergency vehicles.
 
-> **Scope Note:** Nationwide-capable regional architecture is established; nationwide data coverage is a progressive expansion goal. Operational routing is enabled where regional graph and elevation assets have been ingested and validated.
+> **Scope Note:** Nationwide-capable regional architecture is established; nationwide data coverage is a progressive expansion goal. Daraganj is the only validated hazard-model pilot. Varanasi, Mumbai Kurla, and Delhi Yamuna have routable OpenStreetMap road graphs for synthetic demos; their 50 m elevation placeholders and hazard scores are dummy values and are not emergency guidance.
 
 ---
 
@@ -24,12 +24,12 @@ Rakshapath compares:
 ## Current Implementation
 
 - **Validated Pilot Area:** Daraganj, Prayagraj (2 km radius, 1,823 nodes, 4,740 edges) serving as the bundled golden regression baseline.
-- **Nationwide-Capable Regional Architecture:** Registry and ingestion workflow support adding regions, but the current catalog contains only a limited set of planned study areas and does not represent every Indian state or district. Daraganj is the only bundled validated routing region.
+- **Regional Coverage:** The catalog is a small set of city corridors, not state-wide or nationwide coverage. Daraganj is the only calibrated pilot. Varanasi (5,029 nodes, 12,647 directed edges), Mumbai Kurla (20,685 nodes, 49,281 directed edges), and Delhi Yamuna (16,948 nodes, 44,507 directed edges) have local OpenStreetMap road graphs for synthetic routing demos only. Each uses a flat 50 m dummy elevation and uncalibrated hazard outputs; none is emergency guidance. Chennai Adyar, Bengaluru Bellandur, and Guwahati Brahmaputra remain unavailable until road data is obtained and checked. See each region's `metadata.json` for extract provenance and graph counts.
 - **Regional Engine Cache:** A thread-safe LRU retains at most two engines. This bounds entries in that cache only; process RSS also depends on active requests, Python, and loaded libraries, so it is not a process memory cap or a hosting-tier guarantee.
 - **Location Validation:** Requests must fall inside the selected region's declared bounding box, then snap only to a road within that region's configurable 500 m default tolerance.
 - **Dynamic Metric Coordinate Scaling:** Cosine-scaled metric projection ($\cos(\phi)$) ensuring distance errors $< 0.15\%$ across all Indian latitudes (8°N–37°N).
 - **Road & Terrain Processing:** Offline library pipeline (`saferoute/ingestion/pipeline.py`) processes caller-supplied graph and elevation data, extracts the Largest Strongly Connected Component (SCC), fills missing elevations, and precomputes depressions. The current `scripts/ingest_region.py` CLI only lists and validates assets; it does not fetch new regional data.
-- **Flood Scenario:** Physics-based hydrodynamic backwater stage, local rainfall, and depression-ponding model estimating road-segment water depths and vehicle passabilities.
+- **Flood Scenario:** The flood model is validated only for Daraganj. Varanasi, Mumbai, and Delhi use the same code over synthetic flat placeholder terrain and are explicitly labeled dummy demos; outputs are not meaningful flood estimates.
 - **Earthquake Scenario:** Exploratory debris and shaking vulnerability simulation; explicitly labeled as an exploratory scenario, not a live seismic forecast.
 - **Vehicle Profiles:** Modeled water-clearance thresholds are Ambulance (28 cm), Fire Tender (50 cm), and Rescue Truck (65 cm), as defined in `config.py` and `saferoute/config.py`.
 - **Interface:** Streamlit dashboard with cascading administrative selectors (State $\to$ District $\to$ Region), status badges, Folium map overlays, elevation profiles, and benchmark resets.
@@ -145,21 +145,21 @@ python -m streamlit run app.py
 
 ## Testing
 
-Run the full automated test suite (92 tests covering registry, ingestion, routing integration, geographic projection, and UI workflows):
+Run the full automated test suite covering registry, ingestion, routing integration, geographic projection, and UI workflows:
 
 ```bash
 python -m unittest discover tests -v
 ```
 
-**Status: 92 passed, 0 failures, 0 errors.**
+**Status: 99 passed, 0 failures, 0 errors.**
 
 ---
 
 ## Honest Coverage Claims & Limitations
 
-- **Nationwide-Capable $\neq$ Full Nationwide Data:** The registry contains a limited set of planned regions across a subset of states and districts; it is not a complete nationwide administrative catalog. Operational routing is enabled only where graph and elevation assets have been ingested and verified. Currently, **Daraganj, Prayagraj** is the verified bundled pilot baseline. Other planned regions (e.g., Mumbai, Delhi, Chennai, Bengaluru) remain `UNAVAILABLE` until their data ingestion is executed.
+- **Nationwide-Capable $\neq$ Full Nationwide Data:** The registry contains a limited set of study regions across a subset of states and districts; it is not a complete nationwide administrative catalog. **Daraganj, Prayagraj** is the only validated hazard-model pilot. **Varanasi, Mumbai Kurla, and Delhi Yamuna** have OSM road graphs for synthetic routing demonstrations only; their elevation, hazard impact, passability, and reliability values are dummy or uncalibrated. Chennai, Bengaluru, and Guwahati remain `UNAVAILABLE` until their road data is obtained and checked.
 - **Regional Benchmark $\neq$ Proof of Nationwide Safety:** The 300-pair benchmark is conducted exclusively on the validated Daraganj network to demonstrate algorithmic scaling and reliability separation; it does not claim safety in uningested territories.
-- **Hazard Models:** The monsoon flood model is an implemented physics-based hydraulic depression and stage model. The earthquake model is an exploratory debris scenario. Cyclone, landslide, and wildfire hazard models are **not** implemented and are not claimed.
+- **Hazard Models:** Flood routing is the validated Daraganj pilot model. Earthquake debris remains a synthetic scenario. Cyclone, landslide, and wildfire are now available as **synthetic demos only**: their inputs and edge-impact values are invented, are not observations or forecasts, and must not be used for emergency decisions. The demo scores use simple illustrative graph attributes and are not calibrated hazard models.
 - **Cloud Deployment:** The app is a single Streamlit service; no separate React frontend or Python API is part of the current architecture. Deployment memory has not been measured or guaranteed; measure process RSS in the target environment before relying on a particular service tier.
 
 ### Render
@@ -183,7 +183,7 @@ No public deployment URL is configured in this repository, and hosted behavior h
 1. Build a regional registry and offline ingestion pipeline *(implemented as library code; current CLI only lists and validates assets; coverage remains limited)*.
 2. Implement an LRU cache limited to two regional engine entries *(Completed; this is not a process memory cap)*.
 3. Establish reproducible 300-pair empirical benchmark *(Completed)*.
-4. Ingest and calibrate planned high-risk urban river basins (Mumbai Mithi Basin, Delhi Yamuna Floodplain, Chennai Adyar Basin).
+4. Obtain and validate road-network assets for the remaining planned corridors, then acquire real terrain and independently validate regional hazard models before making safety claims.
 5. Develop historical-data-based ML flood prediction and validate independently against CWC gauge records.
-6. Extend multi-hazard modeling to cyclones and landslides.
+6. Replace synthetic cyclone, landslide, and wildfire demos with regionally calibrated models backed by documented hazard data.
 7. Integrate live hospital destination matching and emergency dispatch routing.

@@ -212,12 +212,21 @@ def render_sidebar() -> SidebarState:
         _group("Incident")
         hazard_key = st.selectbox("Hazard type", list(HAZARDS), format_func=lambda k: HAZARDS[k].label, key="hazard")
         hz = HAZARDS[hazard_key]
-        st.caption(hz.note)
+        synthetic_region = active_region.region_id != DEFAULT_REGION_ID
+        if synthetic_region:
+            st.warning(
+                "SYNTHETIC REGIONAL DEMO: hazard inputs and impacts are dummy values; "
+                "regional terrain and hazard models are not calibrated. Not for emergency use."
+            )
+        elif hz.is_validated:
+            st.caption(hz.note)
+        else:
+            st.warning(hz.note)
         params = {}
         for p in hz.params:
             fmt = "%d" if float(p.step).is_integer() else "%.1f"
             params[p.key] = st.slider(
-                f"{p.label} ({p.unit})",
+                f"{p.label}{' (dummy)' if synthetic_region or not hz.is_validated else ''} ({p.unit})",
                 float(p.min),
                 float(p.max),
                 float(p.default),
@@ -290,7 +299,13 @@ def render_sidebar() -> SidebarState:
                 r = registry.get(rid)
                 if not r:
                     return rid
-                tag = "Supported" if r.is_routable else r.status.value.title()
+                tag = (
+                    "Validated pilot"
+                    if r.region_id == DEFAULT_REGION_ID
+                    else "Demo only"
+                    if r.is_routable
+                    else r.status.value.title()
+                )
                 return f"{r.display_name} ({tag})"
 
             default_reg_idx = region_ids.index(active_region.region_id) if active_region.region_id in region_ids else 0
@@ -308,6 +323,12 @@ def render_sidebar() -> SidebarState:
         # Region status indicator
         if selected_region.is_routable:
             st.caption(f"Status: **{selected_region.status_description}**")
+            if selected_region.region_id != DEFAULT_REGION_ID:
+                st.warning(
+                    "SYNTHETIC REGIONAL DEMO: road geometry is OpenStreetMap data; "
+                    "elevation, hazard impacts, passability, and reliability are dummy values. "
+                    "Not for emergency use."
+                )
         else:
             st.warning(
                 f"Status: **{selected_region.status.value.upper()}** — {selected_region.status_description}"
