@@ -14,8 +14,8 @@ Features:
    - cost_s = time_s + lambda * (-ln(max(p, 1e-6))).
 4. Solves three distinct route types:
    - Primary Route: Optimal risk-penalized travel time path.
-   - Backup Route: Re-routed path penalizing primary route's riskiest segments (p < 0.95) by 10x
-     (or all primary segments by 3x if identical).
+   - Backup Route: Compares alternatives produced by penalizing risky and full primary corridors,
+     balancing original route cost against shared-edge exposure.
    - Baseline Route: Conventional shortest geometric distance path.
 5. Computes numerically stable end-to-end reliability (product of segment pass probabilities)
    and identifies the weakest segment (lowest p).
@@ -30,8 +30,9 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from .config import (
-    BACKUP_PENALTY_ALL,
     BACKUP_PENALTY_RISKY,
+    BACKUP_PENALTY_STEPS,
+    BACKUP_DIVERSITY_COST_RATIO,
     CENTER_LAT,
     CENTER_LON,
     DEFAULT_LAMBDA,
@@ -269,14 +270,14 @@ class RoutingEngine:
                 has_impassable = True
 
         # Numerically stable reliability: exp(sum(log(p)))
-        reliability = math.exp(max(-50.0, log_prob_sum))
+        reliability = math.exp(log_prob_sum)
 
         # Overlap with primary edges
         overlap = 0.0
         if primary_edges is not None and len(primary_edges) > 0:
             current_edges = set(zip(nodes[:-1], nodes[1:]))
             common = current_edges.intersection(primary_edges)
-            overlap = len(common) / len(primary_edges)
+            overlap = len(common) / len(current_edges) if current_edges else 0.0
 
         return RouteResult(
             route_type=route_type,
@@ -315,11 +316,9 @@ class RoutingEngine:
 
     def route_backup(self, source: int, target: int, primary_result: RouteResult) -> RouteResult:
         """
-        Compute an independent backup route:
-        1. Identifies primary edges with pass_probability < 0.95.
-        2. Penalizes their cost by 10x on a graph copy and reruns Dijkstra.
-        3. If no risky edges exist or result matches primary, penalizes all primary edges by 3x.
-        4. If still identical, reports the primary route with overlap=1.0.
+        Search penalized alternatives, then balance their base routing cost against
+        shared-edge exposure. This returns a diverse alternate when the extra risk/time
+        cost is reasonable, without treating geometry alone as evidence of safety.
 
         Args:
             source: Origin node ID.
@@ -332,49 +331,58 @@ class RoutingEngine:
         primary_nodes = primary_result.nodes
         primary_edges = set(zip(primary_nodes[:-1], primary_nodes[1:]))
 
-        # Copy graph for penalized pathfinding
-        G_backup = self.graph.copy()
-
-        # Identify risky edges on primary route (p < 0.95)
-        risky_edges = [
+        primary_cost = sum(self.graph[u][v]["cost"] for u, v in primary_edges)
+        diversity_weight = primary_cost * BACKUP_DIVERSITY_COST_RATIO
+        risky_edges = {
             (u, v) for u, v in primary_edges
-            if G_backup[u][v]["pass_probability"] < RISKY_EDGE_P_THRESHOLD
-        ]
+            if self.graph[u][v]["pass_probability"] < RISKY_EDGE_P_THRESHOLD
+        }
 
-        is_fallback = False
+        # Generate candidates by penalizing risky primary edges and then the full
+        # primary corridor at increasing strengths. Score each on the original graph.
+        candidate_paths: Dict[Tuple[int, ...], bool] = {}
+        penalty_plans = []
         if risky_edges:
-            # Penalize risky primary edges by 10x
-            for u, v in risky_edges:
-                G_backup[u][v]["cost"] = G_backup[u][v]["cost"] * BACKUP_PENALTY_RISKY
+            penalty_plans.append((risky_edges, BACKUP_PENALTY_RISKY, False))
+        penalty_plans.extend(
+            (primary_edges, factor, True)
+            for factor in BACKUP_PENALTY_STEPS
+        )
 
+        for edges_to_penalize, factor, is_fallback in penalty_plans:
+            penalized_graph = self.graph.copy()
+            for u, v in edges_to_penalize:
+                penalized_graph[u][v]["cost"] *= factor
             try:
-                candidate_nodes = nx.shortest_path(G_backup, source=source, target=target, weight="cost")
+                nodes = tuple(nx.shortest_path(penalized_graph, source=source, target=target, weight="cost"))
             except nx.NetworkXNoPath:
-                candidate_nodes = primary_nodes
+                continue
+            if nodes != tuple(primary_nodes):
+                candidate_paths[nodes] = candidate_paths.get(nodes, True) and is_fallback
 
-            # Check if candidate differs from primary
-            if candidate_nodes == primary_nodes:
-                is_fallback = True
-        else:
-            is_fallback = True
+        if not candidate_paths:
+            return self._compile_route_result(
+                self.graph,
+                primary_nodes,
+                route_type="backup",
+                primary_edges=primary_edges,
+                is_fallback_backup=True,
+            )
 
-        # Fallback: penalize ALL primary edges by 3x to find an alternate corridor
-        if is_fallback:
-            G_backup_all = self.graph.copy()
-            for u, v in primary_edges:
-                G_backup_all[u][v]["cost"] = G_backup_all[u][v]["cost"] * BACKUP_PENALTY_ALL
+        def score_candidate(nodes: Tuple[int, ...]) -> Tuple[float, float, float]:
+            route_edges = set(zip(nodes[:-1], nodes[1:]))
+            overlap = len(route_edges & primary_edges) / len(route_edges) if route_edges else 1.0
+            base_cost = sum(self.graph[u][v]["cost"] for u, v in route_edges)
+            reliability = math.exp(sum(math.log(self.graph[u][v]["pass_probability"]) for u, v in route_edges))
+            return base_cost + diversity_weight * overlap, overlap, -reliability
 
-            try:
-                candidate_nodes = nx.shortest_path(G_backup_all, source=source, target=target, weight="cost")
-            except nx.NetworkXNoPath:
-                candidate_nodes = primary_nodes
-
+        candidate_nodes = min(candidate_paths, key=score_candidate)
         return self._compile_route_result(
-            self.graph,  # Evaluate actual unpenalized travel times and costs on base graph
-            candidate_nodes,
+            self.graph,
+            list(candidate_nodes),
             route_type="backup",
             primary_edges=primary_edges,
-            is_fallback_backup=is_fallback,
+            is_fallback_backup=candidate_paths[candidate_nodes],
         )
 
     def route_baseline(self, source: int, target: int) -> RouteResult:

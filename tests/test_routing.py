@@ -142,6 +142,23 @@ class TestRoutingEngine(unittest.TestCase):
         self.assertIsNotNone(res.weakest_segment)
         self.assertAlmostEqual(res.weakest_segment[2], min_p, delta=1e-6)
 
+    def test_reliability_underflow_is_reported_as_zero(self):
+        """A route whose probability underflows must not get an artificial positive floor."""
+        graph = nx.MultiDiGraph()
+        for node in range(101):
+            graph.add_node(node, x=81.88 + node * 0.00001, y=25.44)
+        for node in range(100):
+            attrs = {
+                "length": 1.0,
+                "water_depth_cm": 0.0,
+                "pass_probability_ambulance": 1e-6,
+            }
+            graph.add_edge(node, node + 1, **attrs)
+            graph.add_edge(node + 1, node, **attrs)
+
+        route = RoutingEngine(graph, vehicle="ambulance").route_primary(0, 100)
+        self.assertEqual(route.reliability, 0.0)
+
     def test_06_backup_route_properties(self):
         """Test 6: Backup route is valid, reports overlap, and connects endpoints."""
         u, v = self.scc_nodes[15], self.scc_nodes[150]
@@ -154,6 +171,9 @@ class TestRoutingEngine(unittest.TestCase):
         self.assertEqual(backup.nodes[-1], v)
         self.assertGreaterEqual(backup.overlap_with_primary, 0.0)
         self.assertLessEqual(backup.overlap_with_primary, 1.0)
+        common_edges = set(zip(primary.nodes[:-1], primary.nodes[1:])) & set(zip(backup.nodes[:-1], backup.nodes[1:]))
+        backup_edges = set(zip(backup.nodes[:-1], backup.nodes[1:]))
+        self.assertAlmostEqual(backup.overlap_with_primary, len(common_edges) / len(backup_edges))
 
     def test_07_baseline_distance_optimality(self):
         """Test 7: Baseline route achieves minimum or equal geometric distance."""

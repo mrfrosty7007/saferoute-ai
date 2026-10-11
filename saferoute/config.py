@@ -1,6 +1,6 @@
 """
-SafeRouteAI - Configuration & System Constants
-Author: SafeRouteAI Team
+Rakshapath - Configuration & System Constants
+Author: Rakshapath Team
 
 Centralized configuration file defining all geographic, hydrological,
 vehicle clearance, routing, file path, and visualization constants.
@@ -8,12 +8,12 @@ No magic numbers exist outside this module.
 """
 
 import os
-from typing import Dict
+from typing import Dict, Tuple
 
 # ==============================================================================
 # Project & Study Area Settings
 # ==============================================================================
-PROJECT_NAME: str = "SafeRouteAI"
+PROJECT_NAME: str = "Rakshapath"
 PLACE_NAME: str = "Daraganj, Prayagraj, India"
 CENTER_LAT: float = 25.4430
 CENTER_LON: float = 81.8805
@@ -98,7 +98,8 @@ LAMBDA_RISK: Dict[str, float] = {
 DEFAULT_LAMBDA: float = 120.0
 RISKY_EDGE_P_THRESHOLD: float = 0.95    # Edges below this are penalized for backup route
 BACKUP_PENALTY_RISKY: float = 10.0      # Multiplier on risky primary edges
-BACKUP_PENALTY_ALL: float = 3.0         # Fallback multiplier on all primary edges
+BACKUP_PENALTY_STEPS: Tuple[float, ...] = (3.0, 10.0, 30.0)
+BACKUP_DIVERSITY_COST_RATIO: float = 0.5  # Diversity score weight as a share of primary objective cost
 MIN_OD_DISTANCE_M: float = 1500.0       # Minimum origin-destination distance for demo pairs
 NUM_OD_SAMPLES: int = 300               # Number of pairs to evaluate in demo finder
 
