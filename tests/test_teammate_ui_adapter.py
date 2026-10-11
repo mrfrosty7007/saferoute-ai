@@ -128,6 +128,8 @@ class TestTeammateUIAdapter(unittest.TestCase):
         self.assertGreaterEqual(result.primary.reliability, 0.0)
         self.assertLessEqual(result.primary.reliability, 1.0)
         self.assertGreater(len(result.primary.segments), 0)
+        self.assertGreaterEqual(len(result.primary.elevation_profile), 2)
+        self.assertAlmostEqual(result.primary.elevation_profile[-1][0], result.primary.distance_km, delta=0.01)
 
         # Baseline route checks
         self.assertIsNotNone(result.baseline)
@@ -172,6 +174,7 @@ class TestTeammateUIAdapter(unittest.TestCase):
         self.assertIsInstance(result, RouteResult)
         self.assertIsNotNone(result.primary)
         self.assertIsNotNone(result.baseline)
+        self.assertTrue(result.simulated)
 
         # Confirm note flags exploratory scenario simulation
         self.assertTrue(any("Exploratory scenario simulation" in note for note in result.notes))
@@ -299,7 +302,7 @@ class TestTeammateUIAdapter(unittest.TestCase):
 
         # Independent log product calculation
         log_sum = sum(math.log(max(1e-6, s.pass_probability)) for s in res.primary.segments)
-        expected_rel = math.exp(max(-50.0, log_sum))
+        expected_rel = math.exp(log_sum)
         self.assertAlmostEqual(res.primary.reliability, expected_rel, delta=1e-18)
 
         # Verify Primary is > 100x more reliable than Baseline on this pair

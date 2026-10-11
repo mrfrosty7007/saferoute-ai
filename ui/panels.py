@@ -23,7 +23,7 @@ def _rel_color(r: float) -> str:
 def header(status_text: str, status_color: str) -> None:
     st.markdown(
         '<div class="hdr"><div><h1>Resilient Emergency Routing</h1>'
-        f'<p>Compare primary, backup and conventional baseline routes for emergency vehicles under live hazard scenarios in {escape(STUDY_AREA_NAME)}.</p></div>'
+        f'<p>Compare primary, backup and conventional baseline routes for emergency vehicles under selected hazard scenarios in {escape(STUDY_AREA_NAME)}.</p></div>'
         f'<div class="status"><div class="lbl">Scenario status</div>'
         f'<div class="val"><span class="dot" style="background:{status_color}"></span>{escape(status_text)}</div></div></div>',
         unsafe_allow_html=True,
@@ -123,11 +123,11 @@ def insights(result: RouteResult | None) -> None:
         pct = result.overlap_pct
         cls = "bad" if pct >= 70 else "warn" if pct >= 40 else "ok"
         note = (
-            "Backup depends heavily on the primary roads."
+            f"{pct:.0f}% of backup edges are shared with the primary; common-edge exposure can still matter."
             if pct >= 70
-            else "Backup is largely independent of the primary route."
+            else f"{pct:.0f}% of backup edges are shared; check shared segments for common hazards."
             if pct < 40
-            else "Backup shares part of the primary route."
+            else f"{pct:.0f}% of backup edges are shared with the primary."
         )
         body = f'<div class="big {cls}">{pct:.0f}% shared</div><div class="sub">{note}</div>'
     _panel("Backup overlap with primary", body)
@@ -138,7 +138,7 @@ def incident_panel(request: RouteRequest | None) -> None:
         _panel("Incident", '<div class="sub">Complete the origin and destination to define a scenario.</div>')
         return
     hz = HAZARDS[request.hazard]
-    rows = [("Hazard", hz.label), ("Severity", request.severity), ("Vehicle", VEHICLES[request.vehicle].label)]
+    rows = [("Hazard", hz.label), ("Incident classification", request.severity), ("Vehicle", VEHICLES[request.vehicle].label)]
     for p in hz.params:
         rows.append((p.label, f"{request.params.get(p.key, p.default):g} {p.unit}"))
     rows += [
@@ -192,3 +192,21 @@ def route_table(result: RouteResult | None) -> None:
             "Weakest pass probability": st.column_config.ProgressColumn(format="percent", min_value=0, max_value=1),
         },
     )
+
+
+def elevation_profile(result: RouteResult | None) -> None:
+    """Plot DEM-derived elevations sampled at successive route graph nodes."""
+    if result is None:
+        return
+    available = {
+        ROUTE_LABELS[kind]: route
+        for kind, route in result.routes()
+        if route is not None and len(route.elevation_profile) >= 2
+    }
+    if not available:
+        return
+    st.markdown('<div class="section">Route elevation profile</div>', unsafe_allow_html=True)
+    label = st.selectbox("Profile route", list(available), key="profile_route")
+    data = pd.DataFrame(available[label].elevation_profile, columns=["Distance (km)", "Elevation (m)"])
+    st.line_chart(data, x="Distance (km)", y="Elevation (m)", height=250)
+    st.caption("Elevation samples are from road-network nodes; the line between samples is illustrative.")

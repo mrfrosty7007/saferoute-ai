@@ -1,6 +1,6 @@
 """
-SafeRouteAI - Dashboard Configuration
-Author: SafeRouteAI Team (Integrated Frontend & Backend)
+Rakshapath - Dashboard Configuration
+Author: Rakshapath Team (Integrated Frontend & Backend)
 
 Declarative configuration for emergency vehicles, multi-hazard parameters,
 route styles, and geographic study area settings for Daraganj, Prayagraj.
@@ -71,7 +71,7 @@ HAZARDS: dict[str, Hazard] = {
             True,
             (
                 Param("rainfall", "Rainfall intensity", "mm/h", 0, 100, 45, 5),
-                Param("river_level", "River stage elevation", "m", 74.0, 90.0, 82.0, 0.5),
+                Param("river_level", "River stage elevation", "m", 74.0, 90.0, 82.0, 0.1),
             ),
         ),
         Hazard(
@@ -104,8 +104,8 @@ ROUTE_COLORS = {
 }
 
 ROUTE_LABELS = {
-    "primary": "Primary route (SafeRoute)",
-    "backup": "Backup route (Independent Detour)",
+    "primary": "Primary risk-aware route",
+    "backup": "Backup route (Alternate)",
     "baseline": "Conventional baseline (Shortest Path)",
 }
 

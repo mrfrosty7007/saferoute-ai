@@ -142,7 +142,7 @@ class RealRoutingEngine:
             backup=backup_route,
             baseline=baseline_route,
             overlap_pct=overlap_pct,
-            simulated=False,
+            simulated=request.hazard == "earthquake",
             source=f"SafeRouteAI Risk-Aware Routing Engine ({hazard_model.display_name})",
             notes=notes,
         )
@@ -184,12 +184,23 @@ class RealRoutingEngine:
                 )
             )
 
+        profile: List[Tuple[float, float]] = []
+        distance_m = 0.0
+        if b_route.nodes:
+            first = engine.graph.nodes[b_route.nodes[0]]
+            profile.append((0.0, float(first.get("elevation", 0.0))))
+            for seg_info, node_id in zip(b_route.segments, b_route.nodes[1:]):
+                distance_m += seg_info.length_m
+                elevation_m = float(engine.graph.nodes[node_id].get("elevation", 0.0))
+                profile.append((distance_m / 1000.0, elevation_m))
+
         return Route(
             kind=kind,
             segments=segments,
             eta_min=round(b_route.eta_min, 1),
             distance_km=round(b_route.distance_km, 2),
             reliability=float(b_route.reliability),
+            elevation_profile=profile,
         )
 
 

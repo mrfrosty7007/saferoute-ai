@@ -52,7 +52,7 @@ ROUTE_LEGEND = """
  border-radius:3px;padding:10px 12px;font:13px 'IBM Plex Sans',sans-serif;color:#14232b;line-height:1.7;box-shadow:0 2px 6px rgba(0,0,0,0.08)">
  <div style="font-weight:600;margin-bottom:2px">Routes</div>
  <div><span style="display:inline-block;width:30px;border-top:5px solid #1d5fd1;vertical-align:middle;margin-right:8px"></span>Primary (SafeRoute)</div>
- <div><span style="display:inline-block;width:30px;border-top:5px dashed #e8820c;vertical-align:middle;margin-right:8px"></span>Backup (Independent Detour)</div>
+ <div><span style="display:inline-block;width:30px;border-top:5px dashed #e8820c;vertical-align:middle;margin-right:8px"></span>Backup (Alternate)</div>
  <div><span style="display:inline-block;width:30px;border-top:5px solid #7b8794;vertical-align:middle;margin-right:8px"></span>Conventional baseline</div>
  <div style="font-weight:600;margin:6px 0 2px">Segment pass probability</div>
  <div style="height:8px;width:170px;background:linear-gradient(90deg,#780a0a,#c62828,#e9aa14,#1b7a3d);border-radius:2px"></div>

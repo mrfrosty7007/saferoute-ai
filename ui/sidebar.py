@@ -161,7 +161,8 @@ def render_sidebar() -> SidebarState:
                 format=fmt,
                 key=f"p_{hz.key}_{p.key}",
             )
-        severity = st.select_slider("Severity", options=list(SEVERITIES), value="Moderate", key="severity")
+        severity = st.select_slider("Incident classification", options=list(SEVERITIES), value="Moderate", key="severity")
+        st.caption("Classification only; the numeric hazard controls above drive the model inputs.")
 
         _group("Vehicle")
         vehicle = st.radio(

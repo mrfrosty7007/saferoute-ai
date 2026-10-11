@@ -59,6 +59,7 @@ class Route:
     eta_min: float
     distance_km: float
     reliability: float  # 0..1
+    elevation_profile: list[tuple[float, float]] = field(default_factory=list)  # (distance_km, node_elevation_m)
 
     def weakest_segment(self) -> Segment | None:
         return max(self.segments, key=lambda s: s.risk, default=None)
@@ -75,7 +76,7 @@ class RouteResult:
     primary: Route | None = None
     backup: Route | None = None
     baseline: Route | None = None
-    overlap_pct: float | None = None  # share of backup length also used by primary
+    overlap_pct: float | None = None  # share of backup edges also used by primary
     simulated: bool = False
     source: str = ""
     notes: list = field(default_factory=list)

@@ -10,14 +10,14 @@ from ui.sidebar import render_sidebar
 from ui.styles import inject_css
 
 st.set_page_config(
-    page_title="SafeRouteAI — Resilient Emergency Routing",
+    page_title="Rakshapath — AI-Assisted Emergency Routing and Disaster Response",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 inject_css()
 
 
-@st.cache_resource(show_spinner="Loading SafeRouteAI routing engine and road network...")
+@st.cache_resource(show_spinner="Loading Rakshapath routing engine and road network...")
 def get_engine():
     return load_engine()
 
@@ -36,7 +36,7 @@ if state.calculate:
         ss["errors"] = state.errors
     else:
         try:
-            with st.spinner("Calculating real multi-hazard routes with SafeRouteAI"):
+            with st.spinner("Calculating modeled multi-hazard routes with Rakshapath"):
                 ss["result"] = compute_routes(state.request, get_engine())
             ss["result_sig"] = state.request.signature()
             ss["result_request"] = state.request
@@ -99,4 +99,5 @@ with right:
     panels.incident_panel(shown_request or state.request)
     panels.insights(result)
 
+panels.elevation_profile(result)
 panels.route_table(result)
