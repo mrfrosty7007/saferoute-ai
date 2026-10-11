@@ -1,6 +1,6 @@
 """
-SafeRouteAI - Dashboard Launcher
-Author: SafeRouteAI Team
+Rakshapath - Dashboard Launcher
+Author: Rakshapath Team
 
 Convenient Python launcher script for the Streamlit dashboard.
 Usage:
@@ -21,7 +21,7 @@ def main():
         sys.exit(1)
 
     print("=" * 60)
-    print("SafeRouteAI - Launching Multi-Hazard Routing Dashboard")
+    print("Rakshapath - Launching Multi-Hazard Routing Dashboard")
     print("Study Area: Daraganj, Prayagraj, India")
     print("=" * 60)
 
@@ -42,7 +42,7 @@ def main():
     try:
         subprocess.run(cmd, cwd=base_dir, check=True)
     except KeyboardInterrupt:
-        print("\nSafeRouteAI Dashboard stopped.")
+        print("\nRakshapath Dashboard stopped.")
 
 
 if __name__ == "__main__":

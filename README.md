@@ -1,226 +1,142 @@
-# SafeRouteAI
+# Rakshapath
 
-**Dynamic Flood-Resilient Emergency Vehicle Routing System**  
-*Study Area: Daraganj, Prayagraj, India (Ganga–Yamuna Confluence)*
+**AI-Assisted Emergency Routing and Disaster Response**
 
----
+*Safer Routes. Smarter Rescue. Stronger India.*
 
-## 1. Project Overview
+Rakshapath explores how hazard-aware routing could support emergency response during natural disasters. Its current prototype is a regional pilot for the Daraganj riverbank corridor in Prayagraj, Uttar Pradesh. It combines a cached OpenStreetMap road network, terrain elevations and scenario-based hazard models to compare routes for different emergency vehicles. Nationwide coverage is a development goal, not a current capability.
 
-SafeRouteAI is a predictive emergency-routing engine built for flood-prone urban environments. Located at the holy Sangam confluence in Prayagraj, Daraganj experiences acute monsoon flood risks driven by regional river stage rises on the Ganges and Yamuna combined with intense localized rainfall ponding.
+## The problem
 
-Standard navigation systems route vehicles along geometrically shortest paths, often directing emergency responders straight through low-lying roads or flooded depressions. SafeRouteAI models elevation-driven flood depths, computes soft logistic passability probabilities tailored to specific emergency vehicle wading limits, and generates reliable, risk-minimized detour routes.
+The geometrically shortest road path may pass through low-lying or flood-affected segments. A road's modeled passability can also differ by vehicle, since an ambulance, fire tender and rescue truck have different water-clearance assumptions. Rakshapath compares a risk-aware route with an alternate and a conventional shortest-distance baseline so users can inspect the trade-offs.
 
----
+## Current implementation
 
-## 2. Collaboration & Branching Strategy
+- **Pilot area:** Daraganj, Prayagraj, using a checked-in road graph and local study-area landmarks.
+- **Road and terrain data:** OSMnx is used in the ingestion workflow for drivable OpenStreetMap roads. The checked-in graph and elevation assets support local routing; elevation values are derived from digital elevation data.
+- **Flood scenario:** a physics-based regional river-stage and rainfall/depression-ponding model estimates road-segment depths and passability. The river-stage calculation is a regional simplification, not a 2D hydrodynamic simulation.
+- **Vehicle assumptions:** ambulance, fire tender and rescue truck use distinct modeled passability thresholds.
+- **Earthquake scenario:** an exploratory debris and shaking scenario simulation; it is not a forecast.
+- **Routing:** risk-aware primary, alternative backup and shortest-distance baseline routes are calculated against the selected scenario.
+- **Interface:** Streamlit controls are connected to the routing backend through `services/real_engine.py` (`RealRoutingEngine`). Folium displays route geometry and risk overlays; the interface also shows route metrics, landmarks and a route elevation profile.
+- **Input handling:** the application validates supported locations and displays a routing error when no route can be found.
 
-This project is co-developed using a modular Git branching workflow:
+## Architecture
 
-| Branch | Focus Area | Responsibility | Status |
-| :--- | :--- | :--- | :--- |
-| **`main`** | Stable Baseline | Shared stable releases, regression-tested core algorithms, and cached inputs | **Active Baseline** |
-| **`routing`** | Phase 3 Backend | Risk-aware pathfinding (Dijkstra), travel times, backup routes, and baseline comparisons | **Phase 3 Completed** |
-| **`ui`** | Phase 4 Frontend | Interactive Streamlit dashboard + Folium web map with rainfall/river stage sliders | *Upcoming Feature Branch (Collaborator)* |
+The current app loads the checked-in network and depression cache, evaluates the selected hazard and vehicle on the network, calculates routes, then presents the results in Streamlit and Folium.
 
-### Collaboration Rules
-1. `main` always remains functional with verified regression outputs.
-2. The backend routing engine is developed and tested in `routing` before merging into `main`.
-3. The Streamlit + Folium dashboard is developed in `ui`, consuming the `saferoute` package API (`passability()`, `RoutingEngine`, etc.).
-
----
-
-## 3. Implementation Status
-
-- [x] **Phase 1: Road Network Ingestion & Elevation Enrichment**
-  - Downloaded drivable road network within $2\text{ km}$ of Daraganj ($1,823$ nodes, $4,740$ edges).
-  - OpenTopoData SRTM 30m batch fetching with rate limiting and automatic 90m fallback.
-  - Multi-pass topological neighbor averaging for null elevation filling.
-  - GraphML persistence with float type casting (`data/graph.graphml`).
-  - **Data Integrity Hardening**: Deterministic query fingerprinting for Overpass cache selection, strict JSON element validation, geographic relevance enforcement (node count $\ge 500$, centroid distance $\le \text{radius\_m}$), and offline validation prevents loading unrelated candidate files.
-- [x] **Phase 2: Hydrodynamic Flood Risk & Passability Model**
-  - Robust bridge classifier handling multi-value and stringified OSM tags ($20$ bridges identified).
-  - Topographic depression computation within $300\text{ m}$ radius cached in `data/depressions.pkl`.
-  - Regional riverine stage and rainfall depression ponding depth calculation.
-  - Soft-threshold logistic sigmoid passability probability for Ambulance ($28\text{ cm}$), Fire Tender ($50\text{ cm}$), and Rescue Truck ($65\text{ cm}$).
-  - Invariant sanity assertions (non-negative depths, rainfall/river monotonicity).
-  - **Data Integrity Hardening**: Cache schema versioning (Schema v2) with deterministic SHA-256 graph fingerprinting, exact edge key set verification, `(u, v, k)` key normalization, legacy Schema v1 backward compatibility, and strict `KeyError` enforcement eliminating silent zero depression defaults.
-- [x] **Phase 3: Risk-Aware Router & Benchmark Evaluation** *(Branch `routing`)*
-  - Largest strongly connected component extraction ($1,779$ nodes, $4,682$ edges) and parallel edge collapsing ($4,676$ clean directed edges).
-  - Hydrodynamic travel time calculations with water slowdown ($\text{speed\_factor} = 1.0 - 0.5 \times \min(1.0, \frac{\text{depth}}{\text{safe\_depth}})$).
-  - Additive log-risk Dijkstra router ($\text{cost\_s} = \text{time\_s} + \lambda \times (-\ln(\max(p, 10^{-6})))$).
-  - Independent backup route generation ($10\times$ penalty on primary edges with $p < 0.95$).
-  - Conventional shortest-distance baseline comparison.
-  - 300 reproducible OD pair evaluation (seed 42) with top 5 scenario exports (`data/demo_scenarios.json`) and route comparison plot (`data/demo_route_comparison.png`).
-- [ ] **Phase 4: Interactive Dashboard** *(Branch `ui`)*
-  - Streamlit application with river level and rainfall sliders.
-  - Folium interactive geospatial map with color-coded passability layers.
-
----
-
-## 4. Directory Structure
-
-```text
-SafeRouteAI/
-├── saferoute/
-│   ├── __init__.py      # Package interface & public exports
-│   ├── config.py        # Centralized configuration (constants, vehicle limits, slider bounds)
-│   ├── data.py          # Phase 1: Network ingestion, SRTM elevation fetching, GraphML caching
-│   ├── risk.py          # Phase 2: Bridge classification, depressions, depths, passability()
-│   ├── routing.py       # Phase 3: Risk-aware router (stub ready for routing phase)
-│   └── viz.py           # Cartography: elevation map, 3x3 scenario matrix, route plots
-├── scripts/
-│   ├── run_data.py      # Entry point: Ingestion, elevation enrichment, and network map
-│   └── run_risk.py      # Entry point: Sanity assertions, scenario passability table, and 3x3 grid
-├── data/
-│   ├── graph.graphml            # Cached drivable network with node/edge elevations
-│   ├── elevations.json          # Cached node ID -> elevation mapping (OpenTopoData)
-│   ├── depressions.pkl          # Cached edge topographic depressions (300m radius)
-│   ├── elevation_network.png    # Reference plot: Road network elevation model
-│   └── passability_3x3_grid.png # Reference plot: 3x3 scenario passability grid
-├── README.md            # Project documentation & guide
-├── requirements.txt     # Production dependencies
-└── .gitignore           # Ignored files (.venv, __pycache__, test plots, logs)
+```mermaid
+flowchart LR
+    A[Checked-in OSM road graph] --> C[Hazard evaluation]
+    B[Elevation and depression data] --> C
+    D[Vehicle and scenario inputs] --> C
+    C --> E[Segment depth and passability]
+    E --> F[RealRoutingEngine adapter]
+    F --> G[Risk-aware primary route]
+    F --> H[Alternative backup route]
+    F --> I[Shortest-distance baseline]
+    G --> J[Streamlit metrics and Folium map]
+    H --> J
+    I --> J
 ```
 
----
+The adapter implements the UI service contract and delegates hazard evaluation and pathfinding to the existing `saferoute` package. This is a local, single-region application architecture. Cloud services, nationwide ingestion, ML inference and dispatch integrations are not part of the current data flow.
 
-## 5. Mathematical & Physical Models
+## Routing methodology
 
-### A. Flood Water Depth Calculation
-For any road segment $e$:
-$$\text{depth}_{\text{total}} = \text{depth}_{\text{riverine}} + \text{depth}_{\text{rain}} \quad (\text{cm})$$
+- **Primary:** minimizes the modeled sum of travel time and a passability penalty. For an edge with travel time `t` and pass probability `p`, the routing implementation uses `t + λ × -ln(p)`, with a probability floor of `1e-6` and configured risk weight `λ = 120 s`. Edge travel time also includes a modeled water-depth slowdown.
+- **Alternative backup:** searches candidates by penalizing risky primary edges and the primary corridor, then scores candidates with route cost and shared-edge exposure. It is an alternative route, not a promise of independence or greater safety. Shared edges can remain exposed to common hazards; compare overlap, vulnerable segments, travel time and modeled reliability together.
+- **Baseline:** minimizes total road length without the hazard-aware cost. It is a shortest-distance reference, not a fastest-route service.
 
-1. **Riverine Flooding**:
-   $$\text{depth}_{\text{riverine}} = \max(0,\, \text{river\_level} - \text{elev\_min}) \times 100 \quad (\text{cm})$$
-   *Note*: This represents a regional stage elevation simplification (low-lying roads below river stage are subject to backwater inundation without requiring full 2D mesh solvers).
-2. **Rainfall Depression Ponding**:
-   $$\text{depression}_e = \max\left(0,\, \overline{\text{elev\_min}}_{r \le 300\text{m}} - \text{elev\_min}_e\right) \quad (\text{m})$$
-   $$\text{depth}_{\text{rain}} = k \times \text{rainfall\_mm\_hr} \times (1 + \text{depression}_e) \quad (\text{cm})$$
-   - $k = 0.25$ (tunable constant in `saferoute/config.py`).
-3. **Bridges Exemption**:
-   - Tagged bridge structures (`bridge != 'no'`) skip the depth formula ($\text{depth} = 0\text{ cm}$) unless the river level exceeds approach node elevations by more than $1.0\text{ m}$ (overtopping condition).
+The flood stage, rainfall, hazard selection and vehicle assumptions feed edge-risk calculations before routing. Earthquake outputs are labeled as scenario simulations. Route reliability is the product of modeled segment pass probabilities; it is not an observed or validated real-world safety probability.
 
-### B. Soft Threshold Vehicle Pass Probability
-Emergency vehicles have differing safe wading capabilities:
-- **Ambulance**: $28\text{ cm}$
-- **Fire Tender**: $50\text{ cm}$
-- **Rescue Truck**: $65\text{ cm}$
+## Technology stack
 
-Pass probability is evaluated via a logistic sigmoid with softness parameter $s = 5.0\text{ cm}$:
-$$p = \frac{1}{1 + \exp\left(\frac{\text{depth}_{\text{cm}} - \text{safe\_depth}_{\text{cm}}}{s}\right)}$$
-### C. Risk-Aware Emergency Routing Engine
-1. **Hydrodynamic Water Slowdown**:
-   Base travel time is computed at $30\text{ km/h}$ with dynamic water resistance:
-   $$\text{speed\_factor} = 1.0 - 0.5 \times \min\left(1.0,\, \frac{\text{depth}_{\text{cm}}}{\text{safe\_depth}_{\text{cm}}}\right)$$
-   $$\text{speed} = \max(5.0,\, \text{base\_speed} \times \text{speed\_factor}) \quad (\text{km/h})$$
-   $$\text{time\_s} = \frac{\text{length\_m}}{\text{speed}_{\text{m/s}}}$$
+Confirmed project technologies include Python 3.12, Streamlit, Streamlit-Folium, Folium, OSMnx, NetworkX, GeoPandas, Shapely, NumPy, pandas, SciPy and Matplotlib. The pinned transitive dependency set is in `requirements-lock.txt`; the deployment-facing `requirements.txt` includes that lock.
 
-2. **Additive Log-Risk Edge Cost**:
-   To optimize end-to-end reliability ($R = \prod p_e$) alongside travel time using standard Dijkstra pathfinding, edge cost uses the additive log-risk formulation:
-   $$\text{cost\_s} = \text{time\_s} + \lambda \times \left(-\ln(\max(p_e,\, 10^{-6}))\right)$$
-   where $\lambda = 120.0\text{ s}$ represents the trade-off penalty parameter configured in `saferoute/config.py`.
+Proposed future services and technologies are not part of the implemented stack unless listed above as current functionality.
 
-3. **Independent Backup Route**:
-   Primary-route segments with pass probability $p < 0.95$ are penalized by a $10\times$ factor, forcing the router to seek independent, dry detour alternatives.
+## Installation and local execution
 
-4. **Shortest-Distance Baseline**:
-   Conventional navigation minimizes $\sum \text{length\_m}$ without flood awareness, frequently directing vehicles into low-elevation flooded depressions.
-
----
-
-## 6. Installation & Setup
-
-### Prerequisites
-- Python 3.10+ (Tested on Python 3.12)
-- Virtual environment (`uv` or standard `venv`)
-
-### Setup Instructions
+Use Python 3.12. The application runs from the repository root and expects the checked-in graph and depression cache at `data/graph.graphml` and `data/depressions.pkl`.
 
 ```bash
-# Clone the repository
-git clone https://github.com/mrfrosty7007/saferoute-ai.git
-cd saferoute-ai
-
-# Create and activate virtual environment with uv
-uv venv .venv
-.\.venv\Scripts\activate
-uv pip install -r requirements.txt
-
-# Or with standard pip
 python -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
 ```
 
----
+Activate the environment in the shell you are using:
 
-## 7. Execution & Verification
+# Windows PowerShell
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
 
-### Phase 1: Ingest Road Network & Fetch Elevations
 ```bash
-python scripts/run_data.py
+# macOS / Linux
+source .venv/bin/activate
 ```
-Outputs network statistics and generates `data/elevation_network.png`.
 
-### Phase 2: Compute Flood Risk & 3×3 Scenario Matrix
+Then install dependencies and launch the app:
+
 ```bash
-python scripts/run_risk.py
+python -m pip install -r requirements.txt
+python -m pip check
+python -m streamlit run app.py
 ```
-Executes sanity assertions and outputs the scenario passability matrix:
 
-| Scenario | River Level ($m$) | Rain ($mm/h$) | Vehicle | Closed ($p < 0.5$) | Status |
-| :--- | :---: | :---: | :--- | :---: | :--- |
-| **Dry** | $75.0$ | $0.0$ | Ambulance | **0.0%** (2 edges) | Optimal (Green) |
-| **Dry** | $75.0$ | $0.0$ | Fire Tender | **0.0%** (2 edges) | Optimal (Green) |
-| **Dry** | $75.0$ | $0.0$ | Rescue Truck | **0.0%** (2 edges) | Optimal (Green) |
-| **Moderate** | $82.0$ | $45.0$ | Ambulance | **19.1%** (906 edges) | Moderate Impact |
-| **Moderate** | $82.0$ | $45.0$ | Fire Tender | **4.1%** (196 edges) | Moderate Impact |
-| **Moderate** | $82.0$ | $45.0$ | Rescue Truck | **2.3%** (108 edges) | Moderate Impact |
-| **Severe** | $87.0$ | $90.0$ | Ambulance | **44.5%** (2,110 edges) | Heavy Inundation |
-| **Severe** | $87.0$ | $90.0$ | Fire Tender | **23.6%** (1,120 edges) | Moderate Impact |
-| **Severe** | $87.0$ | $90.0$ | Rescue Truck | **16.6%** (785 edges) | Moderate Impact |
+The root `requirements.txt` includes `requirements-lock.txt`, which pins the Python 3.12 dependency resolution. The lock pins package versions but not hashes or platform-specific wheels. `.streamlit/config.toml` contains the app theme and headless setting. `data/elevations.json` is a checked-in elevation mapping; normal cached routing uses the graph and depression assets.
 
-Generates the 3×3 grid artifact at `data/passability_3x3_grid.png`.
+If startup reports a missing network/cache, verify both required files exist and run from the repository root. The optional place-search input needs network access to its geocoding service. OpenStreetMap map tiles also require browser network access. Use a registered landmark or coordinates if place search is unavailable.
 
-### Phase 3: Risk-Aware Routing Engine & 300-Scenario Demonstration
+## Using the application
+
+1. Launch the Streamlit app from the repository root.
+2. Choose a vehicle and the available hazard scenario. For flooding, set rainfall and river-stage elevation; for the earthquake scenario, configure its displayed parameters.
+3. Choose origin and destination using a Daraganj landmark, coordinates within the study bounds, or the optional place search.
+4. Select **Calculate routes**. Review the primary, alternate and baseline routes and their distance, estimated travel time, modeled reliability and shared-edge overlap.
+5. Inspect the Folium map and select its route/risk view. Review the available elevation profile, which plots sampled road-network node elevations along route distance.
+
+Inputs are scenario values, not live hazard observations. A no-path result is shown in the app with the routing error; it does not silently reuse an earlier result.
+
+## Testing
+
+Run the repository's full unittest suite from an activated Python 3.12 environment:
+
 ```bash
-# Run unit test suite (including cache validation regression tests)
-python -m unittest discover tests
-
-# Or run specific test modules
-python -m unittest tests/test_cache_validation.py
-python -m unittest tests/test_routing.py
-
-# Run reproducible routing evaluation (seed 42, 300 OD pairs >= 1.5 km)
-python scripts/run_routing.py
+python -m unittest discover tests -v
 ```
 
-Outputs the top 5 scenarios comparing SafeRoute vs. Baseline navigation to `data/demo_scenarios.json` and renders the best scenario map to `data/demo_route_comparison.png`.
+The Phase 5 release report records **67 passed, 0 failures/errors and 0 skipped** in both the repository environment and a clean Python 3.12.10 environment. These are local results, not hosted-app test results. The documented checks also include `python -m pip check` and `git diff --check`. See [`docs/phase5_test_report.md`](docs/phase5_test_report.md) for commands, workflow evidence and limitations.
 
-### Phase 4: Interactive Multi-Hazard Dashboard (Streamlit + Folium)
-```bash
-# Launch interactive dashboard
-streamlit run app.py
+## Current limitations
 
-# Or using the launcher script
-python scripts/run_app.py
+- The implemented study area is the Daraganj/Prayagraj pilot; nationwide geographic coverage has not been established.
+- Flood risk is calculated by a physics-based regional simplification. A separately trained and independently validated ML flood-prediction model is not established.
+- The earthquake model is exploratory and does not provide a live seismic forecast.
+- Live flood feeds, live traffic, operational dispatch and real-time hospital capacity are not established in this application.
+- Route reliability is a modeled estimate from segment pass probabilities, not a proven real-world safety probability.
+- Alternate routes can share vulnerable road segments. Lower overlap does not demonstrate hazard independence or higher reliability.
+- Public Streamlit deployment has not been independently verified.
 
-# Or on Windows double-click
-run_demo.bat
-```
-Opens the interactive web application at `http://localhost:8501`. Enables switching between validated flood and simulated earthquake scenarios, adjusting river/rainfall/shaking parameters, choosing emergency vehicles, and comparing Primary, Backup, and Baseline routes on an interactive Folium map.
+## Roadmap
 
----
+The following are planned work, not completed capabilities:
 
-## 8. Reference Visualizations
+1. Build a regional data registry and scalable road-network ingestion across India.
+2. Expand elevation and hazard-data coverage.
+3. Develop historical-data-based ML flood prediction and validate it independently.
+4. Extend multi-hazard modeling to risks such as cyclones and landslides.
+5. Explore emergency incident and response-team recommendations.
+6. Add hospital destination matching.
+7. Continue frontend integration with the UI team.
+8. Verify hosted deployment and test broader geographic coverage.
 
-### Elevation Network Map
-![Road Network Elevation](data/elevation_network.png)
+## Deployment status
 
-### 3×3 Scenario Passability Matrix
-![3x3 Scenario Comparison Grid](data/passability_3x3_grid.png)
+The documented intended Streamlit Community Cloud setup uses the GitHub repository `mrfrosty7007/saferoute-ai`, branch `integration/ui-backend`, and entry point `app.py`, with Python 3.12 and the checked-in dependency files. This describes the intended setup; it does not establish that a Cloud app is published. These local changes have not been pushed, no public app URL is configured or supplied, and the public deployment has **not** been independently verified. See [`docs/phase5_deployment_checklist.md`](docs/phase5_deployment_checklist.md) for deployment and post-publication checks.
 
-### Phase 3: Emergency Route Comparison (Ambulance in Moderate Flood)
-![Emergency Route Comparison](data/demo_route_comparison.png)
+## Contributing and license
 
+Contributions can be proposed through a focused branch and pull request. Include relevant tests for behavioral changes, run the full test suite and `git diff --check`, and describe any data or scenario assumptions. Do not include credentials or private environment files.
+
+No `LICENSE` file is present in this repository. No open-source license is asserted here; check with the project maintainers before redistributing or reusing the code.

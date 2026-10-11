@@ -1,10 +1,10 @@
 @echo off
 REM ==============================================================================
-REM SafeRouteAI - Windows Local Demo Launcher
+REM Rakshapath - Windows Local Demo Launcher
 REM ==============================================================================
 
 echo ====================================================================
-echo Starting SafeRouteAI Multi-Hazard Emergency Routing Dashboard...
+echo Starting Rakshapath Multi-Hazard Emergency Routing Dashboard...
 echo Study Area: Daraganj, Prayagraj, India
 echo ====================================================================
 
