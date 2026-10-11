@@ -1,3 +1,5 @@
+# Streamlit Community Cloud consumes this file; include the exact release pins.
+-r requirements-lock.txt
 osmnx>=2.1.0
 networkx>=3.0
 matplotlib>=3.8.0
