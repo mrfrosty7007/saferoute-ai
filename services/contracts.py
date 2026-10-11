@@ -13,6 +13,8 @@ from dataclasses import asdict, dataclass, field
 from config import HAZARDS, SEVERITIES, STUDY_AREA_BOUNDS, STUDY_AREA_NAME, VEHICLES
 from services.geo import haversine_m
 
+from saferoute.regions import DEFAULT_REGION_ID, registry
+
 HIGH_RISK_THRESHOLD = 0.50  # segment risk at or above this counts as "impassable / highly risky" (p <= 0.50)
 
 
@@ -35,6 +37,7 @@ class RouteRequest:
     hazard: str
     params: dict
     severity: str
+    region_id: str = DEFAULT_REGION_ID
 
     def signature(self) -> str:
         return json.dumps(asdict(self), sort_keys=True)
@@ -92,21 +95,43 @@ class RouteResult:
 def validate_request(req: RouteRequest) -> list:
     """Return a list of human-readable problems; empty means valid."""
     errs = []
+
+    # 1. Validate Region Registry status
+    region_id = getattr(req, "region_id", DEFAULT_REGION_ID) or DEFAULT_REGION_ID
+    reg = registry.get(region_id)
+    if reg is None:
+        errs.append(f"Unknown region '{region_id}'.")
+        return errs
+    if not reg.is_routable:
+        errs.append(
+            f"Region '{reg.display_name}' ({reg.state}) is currently {reg.status.value}: "
+            f"{reg.status_description}"
+        )
+        return errs
+
+    # 2. Validate Origin and Destination Coordinates
     for label, p in (("Origin", req.origin), ("Destination", req.destination)):
         if p is None:
             errs.append(f"{label} is not set.")
         elif not (-90 <= p.lat <= 90 and -180 <= p.lon <= 180):
             errs.append(f"{label} coordinates are outside the valid global range.")
         else:
-            # Check geographic study area bounds (Daraganj, Prayagraj)
-            b = STUDY_AREA_BOUNDS
-            # Allow reasonable buffer around Daraganj
-            if not (b["min_lat"] - 0.05 <= p.lat <= b["max_lat"] + 0.05 and
-                    b["min_lon"] - 0.05 <= p.lon <= b["max_lon"] + 0.05):
-                errs.append(
-                    f"{label} ({p.lat:.4f}, {p.lon:.4f}) is outside the {STUDY_AREA_NAME} study area "
-                    f"(approx. 25.42°N–25.47°N, 81.85°E–81.91°E). Please select a location in Daraganj."
-                )
+            # Enforce the published study-area box exactly. Road-node snapping is
+            # separately bounded in meters by the region's snap_tolerance_m.
+            b = reg.bounds
+            if not b.contains(p.lat, p.lon):
+                if reg.region_id == DEFAULT_REGION_ID:
+                    errs.append(
+                        f"{label} ({p.lat:.4f}, {p.lon:.4f}) is outside the {STUDY_AREA_NAME} study area "
+                        f"({b.min_lat:.3f}°N–{b.max_lat:.3f}°N, {b.min_lon:.3f}°E–{b.max_lon:.3f}°E). "
+                        f"Please select a location inside the Daraganj study-area boundary."
+                    )
+                else:
+                    errs.append(
+                        f"{label} ({p.lat:.4f}, {p.lon:.4f}) is outside the {reg.display_name} study area "
+                        f"(approx. {b.min_lat:.2f}°N–{b.max_lat:.2f}°N, {b.min_lon:.2f}°E–{b.max_lon:.2f}°E). "
+                        f"Please select a location in {reg.city}."
+                    )
 
     if errs:
         return errs

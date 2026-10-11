@@ -214,6 +214,8 @@ def precompute_depressions(
     G: nx.MultiDiGraph,
     radius_m: float = DEPRESSION_RADIUS_M,
     cache_path: str = DEPRESSIONS_CACHE_FILE,
+    center_lat: Optional[float] = None,
+    center_lon: Optional[float] = None,
 ) -> Dict[Tuple[int, int, int], float]:
     """
     Precompute topographic depressions for all edges in G within radius_m.
@@ -223,6 +225,8 @@ def precompute_depressions(
         G: Road network graph with 'elev_min' and node coordinates.
         radius_m: Neighborhood radius in meters.
         cache_path: Path to depressions.pkl cache file.
+        center_lat: Optional center latitude for local metric projection.
+        center_lon: Optional center longitude for local metric projection.
 
     Returns:
         Dictionary mapping edge key (u, v, k) to depression in meters.
@@ -241,6 +245,11 @@ def precompute_depressions(
 
     print(f"Precomputing edge topographic depressions (radius: {radius_m}m)...", flush=True)
 
+    ref_lat = center_lat if center_lat is not None else CENTER_LAT
+    ref_lon = center_lon if center_lon is not None else CENTER_LON
+    meters_lat = METERS_PER_DEG_LAT
+    meters_lon = (111320.0 * math.cos(math.radians(ref_lat))) if center_lat is not None else METERS_PER_DEG_LON
+
     edge_keys: List[Tuple[int, int, int]] = []
     midpoint_coords: List[Tuple[float, float]] = []
     elev_mins: List[float] = []
@@ -251,8 +260,8 @@ def precompute_depressions(
         mid_lat = (lat1 + lat2) / 2.0
         mid_lon = (lon1 + lon2) / 2.0
 
-        x_m = (mid_lon - CENTER_LON) * METERS_PER_DEG_LON
-        y_m = (mid_lat - CENTER_LAT) * METERS_PER_DEG_LAT
+        x_m = (mid_lon - ref_lon) * meters_lon
+        y_m = (mid_lat - ref_lat) * meters_lat
 
         edge_keys.append((u, v, k))
         midpoint_coords.append((x_m, y_m))

@@ -20,10 +20,11 @@ def _rel_color(r: float) -> str:
     return "#1b7a3d" if r >= 0.8 else "#d68a00" if r >= 0.5 else "#c62828"
 
 
-def header(status_text: str, status_color: str) -> None:
+def header(status_text: str, status_color: str, region_name: str | None = None) -> None:
+    area = region_name or STUDY_AREA_NAME
     st.markdown(
         '<div class="hdr"><div><h1>Resilient Emergency Routing</h1>'
-        f'<p>Compare primary, backup and conventional baseline routes for emergency vehicles under selected hazard scenarios in {escape(STUDY_AREA_NAME)}.</p></div>'
+        f'<p>Compare primary, backup and conventional baseline routes for emergency vehicles under selected hazard scenarios in {escape(area)}.</p></div>'
         f'<div class="status"><div class="lbl">Scenario status</div>'
         f'<div class="val"><span class="dot" style="background:{status_color}"></span>{escape(status_text)}</div></div></div>',
         unsafe_allow_html=True,

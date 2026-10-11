@@ -4,70 +4,127 @@
 
 *Safer Routes. Smarter Rescue. Stronger India.*
 
-Rakshapath explores how hazard-aware routing could support emergency response during natural disasters. Its current prototype is a regional pilot for the Daraganj riverbank corridor in Prayagraj, Uttar Pradesh. It combines a cached OpenStreetMap road network, terrain elevations and scenario-based hazard models to compare routes for different emergency vehicles. Nationwide coverage is a development goal, not a current capability.
+Rakshapath explores how hazard-aware routing can support emergency response during natural disasters across India. Its verified foundational pilot is the Daraganj riverbank corridor in Prayagraj, Uttar Pradesh. It combines cached OpenStreetMap road networks, terrain elevations, and scenario-based hazard models to compare routes for different emergency vehicles.
 
-## The problem
+> **Scope Note:** Nationwide-capable regional architecture is established; nationwide data coverage is a progressive expansion goal. Operational routing is enabled where regional graph and elevation assets have been ingested and validated.
 
-The geometrically shortest road path may pass through low-lying or flood-affected segments. A road's modeled passability can also differ by vehicle, since an ambulance, fire tender and rescue truck have different water-clearance assumptions. Rakshapath compares a risk-aware route with an alternate and a conventional shortest-distance baseline so users can inspect the trade-offs.
+---
 
-## Current implementation
+## The Problem
 
-- **Pilot area:** Daraganj, Prayagraj, using a checked-in road graph and local study-area landmarks.
-- **Road and terrain data:** OSMnx is used in the ingestion workflow for drivable OpenStreetMap roads. The checked-in graph and elevation assets support local routing; elevation values are derived from digital elevation data.
-- **Flood scenario:** a physics-based regional river-stage and rainfall/depression-ponding model estimates road-segment depths and passability. The river-stage calculation is a regional simplification, not a 2D hydrodynamic simulation.
-- **Vehicle assumptions:** ambulance, fire tender and rescue truck use distinct modeled passability thresholds.
-- **Earthquake scenario:** an exploratory debris and shaking scenario simulation; it is not a forecast.
-- **Routing:** risk-aware primary, alternative backup and shortest-distance baseline routes are calculated against the selected scenario.
-- **Interface:** Streamlit controls are connected to the routing backend through `services/real_engine.py` (`RealRoutingEngine`). Folium displays route geometry and risk overlays; the interface also shows route metrics, landmarks and a route elevation profile.
-- **Input handling:** the application validates supported locations and displays a routing error when no route can be found.
+Conventional navigation systems optimize strictly for travel time or shortest road distance. In disaster scenarios, the geometrically shortest route frequently cuts through low-lying corridors, submerged underpasses, or debris-blocked roads. Furthermore, road passability differs fundamentally by vehicle: an ambulance, fire tender, and heavy rescue truck have drastically different water-clearance thresholds.
+
+Rakshapath compares:
+1. **SafeRoute (Primary):** Risk-aware path minimizing travel time plus passability hazard penalty ($t + \lambda \cdot (-\ln p)$).
+2. **Alternative Backup:** Distinct path penalized for overlapping with the primary corridor.
+3. **Conventional Baseline:** Shortest-path Dijkstra route without hazard awareness.
+
+---
+
+## Current Implementation
+
+- **Validated Pilot Area:** Daraganj, Prayagraj (2 km radius, 1,823 nodes, 4,740 edges) serving as the bundled golden regression baseline.
+- **Nationwide-Capable Regional Architecture:** Registry and ingestion workflow support adding regions, but the current catalog contains only a limited set of planned study areas and does not represent every Indian state or district. Daraganj is the only bundled validated routing region.
+- **Regional Engine Cache:** A thread-safe LRU retains at most two engines. This bounds entries in that cache only; process RSS also depends on active requests, Python, and loaded libraries, so it is not a process memory cap or a hosting-tier guarantee.
+- **Location Validation:** Requests must fall inside the selected region's declared bounding box, then snap only to a road within that region's configurable 500 m default tolerance.
+- **Dynamic Metric Coordinate Scaling:** Cosine-scaled metric projection ($\cos(\phi)$) ensuring distance errors $< 0.15\%$ across all Indian latitudes (8°N–37°N).
+- **Road & Terrain Processing:** Offline library pipeline (`saferoute/ingestion/pipeline.py`) processes caller-supplied graph and elevation data, extracts the Largest Strongly Connected Component (SCC), fills missing elevations, and precomputes depressions. The current `scripts/ingest_region.py` CLI only lists and validates assets; it does not fetch new regional data.
+- **Flood Scenario:** Physics-based hydrodynamic backwater stage, local rainfall, and depression-ponding model estimating road-segment water depths and vehicle passabilities.
+- **Earthquake Scenario:** Exploratory debris and shaking vulnerability simulation; explicitly labeled as an exploratory scenario, not a live seismic forecast.
+- **Vehicle Profiles:** Modeled water-clearance thresholds are Ambulance (28 cm), Fire Tender (50 cm), and Rescue Truck (65 cm), as defined in `config.py` and `saferoute/config.py`.
+- **Interface:** Streamlit dashboard with cascading administrative selectors (State $\to$ District $\to$ Region), status badges, Folium map overlays, elevation profiles, and benchmark resets.
+
+---
 
 ## Architecture
 
-The current app loads the checked-in network and depression cache, evaluates the selected hazard and vehicle on the network, calculates routes, then presents the results in Streamlit and Folium.
+Rakshapath uses a modular, on-demand regional architecture:
 
 ```mermaid
-flowchart LR
-    A[Checked-in OSM road graph] --> C[Hazard evaluation]
-    B[Elevation and depression data] --> C
-    D[Vehicle and scenario inputs] --> C
-    C --> E[Segment depth and passability]
-    E --> F[RealRoutingEngine adapter]
-    F --> G[Risk-aware primary route]
-    F --> H[Alternative backup route]
-    F --> I[Shortest-distance baseline]
-    G --> J[Streamlit metrics and Folium map]
-    H --> J
-    I --> J
+flowchart TD
+    A["India Administrative Registry (saferoute.regions)"] --> B["State / Union Territory"]
+    B --> C["District"]
+    C --> D["Study Area / Region Metadata"]
+    D --> E{"Region Status"}
+    E -->|"SUPPORTED_BUNDLED / LOCAL"| F["RegionalEngineManager (Bounded LRU Cache)"]
+    E -->|"UNAVAILABLE / PARTIAL"| G["Unavailable-region status and guidance"]
+    F --> H["Load GraphML & Topographic Depressions"]
+    H --> I["Hazard Model Evaluation"]
+    I --> J["RealRoutingEngine Adapter"]
+    J --> K["SafeRoute Primary Path"]
+    J --> L["Alternative Backup Path"]
+    J --> M["Conventional Baseline Path"]
+    K --> N["Streamlit Folium Dashboard"]
+    L --> N
+    M --> N
 ```
 
-The adapter implements the UI service contract and delegates hazard evaluation and pathfinding to the existing `saferoute` package. This is a local, single-region application architecture. Cloud services, nationwide ingestion, ML inference and dispatch integrations are not part of the current data flow.
+For architecture details, data schemas, cache behavior, and limitations, see [`docs/nationwide_architecture.md`](docs/nationwide_architecture.md).
 
-## Routing methodology
+---
 
-- **Primary:** minimizes the modeled sum of travel time and a passability penalty. For an edge with travel time `t` and pass probability `p`, the routing implementation uses `t + λ × -ln(p)`, with a probability floor of `1e-6` and configured risk weight `λ = 120 s`. Edge travel time also includes a modeled water-depth slowdown.
-- **Alternative backup:** searches candidates by penalizing risky primary edges and the primary corridor, then scores candidates with route cost and shared-edge exposure. It is an alternative route, not a promise of independence or greater safety. Shared edges can remain exposed to common hazards; compare overlap, vulnerable segments, travel time and modeled reliability together.
-- **Baseline:** minimizes total road length without the hazard-aware cost. It is a shortest-distance reference, not a fastest-route service.
+## Routing Methodology
 
-The flood stage, rainfall, hazard selection and vehicle assumptions feed edge-risk calculations before routing. Earthquake outputs are labeled as scenario simulations. Route reliability is the product of modeled segment pass probabilities; it is not an observed or validated real-world safety probability.
+- **Primary (SafeRoute):** Minimizes the modeled sum of travel time and passability hazard penalty:
+  $$\text{cost} = t + \lambda \times (-\ln p)$$
+  where $\lambda = 120\text{ s}$ and pass probability is bounded by a numerical floor of $10^{-6}$. Edge travel time includes depth-dependent water slowdown.
+- **Alternative Backup:** Penalizes edges shared with the primary route to discover distinct emergency corridors. Evaluates route cost, reliability, and corridor overlap percentage.
+- **Baseline:** Minimizes total geometric road length without hazard awareness. Serves as the conventional shortest-path benchmark.
 
-## Technology stack
+Reliability is calculated as the multiplicative end-to-end product of segment pass probabilities ($\prod p_i$), computed via log-sum ($\exp(\sum \ln p_i)$) for numerical stability.
 
-Confirmed project technologies include Python 3.12, Streamlit, Streamlit-Folium, Folium, OSMnx, NetworkX, GeoPandas, Shapely, NumPy, pandas, SciPy and Matplotlib. The pinned transitive dependency set is in `requirements-lock.txt`; the deployment-facing `requirements.txt` includes that lock.
+---
 
-Proposed future services and technologies are not part of the implemented stack unless listed above as current functionality.
+## Regional Ingestion & Reproducible Benchmarks
 
-## Installation and local execution
+### Ingestion CLI
 
-Use Python 3.12. The application runs from the repository root and expects the checked-in graph and depression cache at `data/graph.graphml` and `data/depressions.pkl`.
+List regions and validate already-prepared regional assets:
+
+```bash
+# List all registered regions and support status
+python scripts/ingest_region.py --list
+
+# Validate local assets for a region
+python scripts/ingest_region.py --region daraganj_prayagraj --validate-only
+```
+
+The current CLI does not download or ingest new datasets. The pipeline is available as a Python API; prepare new assets offline before processing them.
+
+### Reproducible Benchmark Suite
+
+Run the 300 deterministic OD pair benchmark (seed 42, distance $\ge 1.5$ km) for Ambulance and Rescue Truck under severe flood conditions:
+
+```bash
+python scripts/run_benchmarks.py --region daraganj_prayagraj --samples 300 --min-dist 1500 --seed 42
+```
+
+Outputs are exported to `data/benchmark_results_daraganj_prayagraj.json` and `data/benchmark_plot_daraganj_prayagraj.png`.
+
+#### Recorded Benchmark Summary (Daraganj Golden Baseline):
+- **Asset Load Time:** 0.674 s
+- **Traced Python Peak Allocation:** 27.26 MiB in the legacy run (not process RAM; RSS was not recorded)
+- **Routing Success Rate:** 100.0% (300/300 pairs connected)
+- **First-Route Latency:** 105.34 ms (Ambulance), 666.62 ms (Rescue Truck)
+- **Subsequent Route Mean Latency:** 607.65 ms (Ambulance), 521.98 ms (Rescue Truck)
+- **Mean Primary Reliability:** Ambulance 0.52% (Baseline 0.0%), Rescue Truck 75.50% (Baseline 62.58%)
+- **Rank 1 Corridor Benchmark:** Primary 22.25% vs Baseline 0.06% (>20% absolute gain)
+- **Data Coverage:** 100.0% elevation coverage, 100.0% depression coverage
+
+---
+
+## Installation & Local Execution
+
+Use Python 3.12. The application runs from the repository root:
 
 ```bash
 python -m venv .venv
 ```
 
-Activate the environment in the shell you are using:
+Activate the environment in your shell:
 
-# Windows PowerShell
 ```powershell
+# Windows PowerShell
 .\.venv\Scripts\Activate.ps1
 ```
 
@@ -76,7 +133,7 @@ Activate the environment in the shell you are using:
 source .venv/bin/activate
 ```
 
-Then install dependencies and launch the app:
+Install pinned dependencies and launch the application:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -84,59 +141,49 @@ python -m pip check
 python -m streamlit run app.py
 ```
 
-The root `requirements.txt` includes `requirements-lock.txt`, which pins the Python 3.12 dependency resolution. The lock pins package versions but not hashes or platform-specific wheels. `.streamlit/config.toml` contains the app theme and headless setting. `data/elevations.json` is a checked-in elevation mapping; normal cached routing uses the graph and depression assets.
-
-If startup reports a missing network/cache, verify both required files exist and run from the repository root. The optional place-search input needs network access to its geocoding service. OpenStreetMap map tiles also require browser network access. Use a registered landmark or coordinates if place search is unavailable.
-
-## Using the application
-
-1. Launch the Streamlit app from the repository root.
-2. Choose a vehicle and the available hazard scenario. For flooding, set rainfall and river-stage elevation; for the earthquake scenario, configure its displayed parameters.
-3. Choose origin and destination using a Daraganj landmark, coordinates within the study bounds, or the optional place search.
-4. Select **Calculate routes**. Review the primary, alternate and baseline routes and their distance, estimated travel time, modeled reliability and shared-edge overlap.
-5. Inspect the Folium map and select its route/risk view. Review the available elevation profile, which plots sampled road-network node elevations along route distance.
-
-Inputs are scenario values, not live hazard observations. A no-path result is shown in the app with the routing error; it does not silently reuse an earlier result.
+---
 
 ## Testing
 
-Run the repository's full unittest suite from an activated Python 3.12 environment:
+Run the full automated test suite (92 tests covering registry, ingestion, routing integration, geographic projection, and UI workflows):
 
 ```bash
 python -m unittest discover tests -v
 ```
 
-The Phase 5 release report records **67 passed, 0 failures/errors and 0 skipped** in both the repository environment and a clean Python 3.12.10 environment. These are local results, not hosted-app test results. The documented checks also include `python -m pip check` and `git diff --check`. See [`docs/phase5_test_report.md`](docs/phase5_test_report.md) for commands, workflow evidence and limitations.
+**Status: 92 passed, 0 failures, 0 errors.**
 
-## Current limitations
+---
 
-- The implemented study area is the Daraganj/Prayagraj pilot; nationwide geographic coverage has not been established.
-- Flood risk is calculated by a physics-based regional simplification. A separately trained and independently validated ML flood-prediction model is not established.
-- The earthquake model is exploratory and does not provide a live seismic forecast.
-- Live flood feeds, live traffic, operational dispatch and real-time hospital capacity are not established in this application.
-- Route reliability is a modeled estimate from segment pass probabilities, not a proven real-world safety probability.
-- Alternate routes can share vulnerable road segments. Lower overlap does not demonstrate hazard independence or higher reliability.
-- Public Streamlit deployment has not been independently verified.
+## Honest Coverage Claims & Limitations
+
+- **Nationwide-Capable $\neq$ Full Nationwide Data:** The registry contains a limited set of planned regions across a subset of states and districts; it is not a complete nationwide administrative catalog. Operational routing is enabled only where graph and elevation assets have been ingested and verified. Currently, **Daraganj, Prayagraj** is the verified bundled pilot baseline. Other planned regions (e.g., Mumbai, Delhi, Chennai, Bengaluru) remain `UNAVAILABLE` until their data ingestion is executed.
+- **Regional Benchmark $\neq$ Proof of Nationwide Safety:** The 300-pair benchmark is conducted exclusively on the validated Daraganj network to demonstrate algorithmic scaling and reliability separation; it does not claim safety in uningested territories.
+- **Hazard Models:** The monsoon flood model is an implemented physics-based hydraulic depression and stage model. The earthquake model is an exploratory debris scenario. Cyclone, landslide, and wildfire hazard models are **not** implemented and are not claimed.
+- **Cloud Deployment:** The app is a single Streamlit service; no separate React frontend or Python API is part of the current architecture. Deployment memory has not been measured or guaranteed; measure process RSS in the target environment before relying on a particular service tier.
+
+### Render
+
+Create a Python web service for this repository and select the branch containing the release. Use the repository root as the service root, install dependencies with `python -m pip install -r requirements.txt`, and set the start command to:
+
+```bash
+python -m streamlit run app.py --server.address 0.0.0.0 --server.port $PORT
+```
+
+### Streamlit Community Cloud
+
+In Community Cloud, create an app and configure the GitHub repository `mrfrosty7007/saferoute-ai`, the published branch containing the release, and `app.py` as the entrypoint. In **Advanced settings**, select Python 3.12. Community Cloud installs dependencies from the root `requirements.txt`; the checked-in graph and depression assets are required. The default workflow needs no secrets. Do not enter a Render start command in the Community Cloud app settings. See the [Community Cloud deployment guide](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/deploy) and [dependency guide](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/app-dependencies).
+
+No public deployment URL is configured in this repository, and hosted behavior has not been verified.
+
+---
 
 ## Roadmap
 
-The following are planned work, not completed capabilities:
-
-1. Build a regional data registry and scalable road-network ingestion across India.
-2. Expand elevation and hazard-data coverage.
-3. Develop historical-data-based ML flood prediction and validate it independently.
-4. Extend multi-hazard modeling to risks such as cyclones and landslides.
-5. Explore emergency incident and response-team recommendations.
-6. Add hospital destination matching.
-7. Continue frontend integration with the UI team.
-8. Verify hosted deployment and test broader geographic coverage.
-
-## Deployment status
-
-The documented intended Streamlit Community Cloud setup uses the GitHub repository `mrfrosty7007/saferoute-ai`, branch `integration/ui-backend`, and entry point `app.py`, with Python 3.12 and the checked-in dependency files. This describes the intended setup; it does not establish that a Cloud app is published. These local changes have not been pushed, no public app URL is configured or supplied, and the public deployment has **not** been independently verified. See [`docs/phase5_deployment_checklist.md`](docs/phase5_deployment_checklist.md) for deployment and post-publication checks.
-
-## Contributing and license
-
-Contributions can be proposed through a focused branch and pull request. Include relevant tests for behavioral changes, run the full test suite and `git diff --check`, and describe any data or scenario assumptions. Do not include credentials or private environment files.
-
-No `LICENSE` file is present in this repository. No open-source license is asserted here; check with the project maintainers before redistributing or reusing the code.
+1. Build a regional registry and offline ingestion pipeline *(implemented as library code; current CLI only lists and validates assets; coverage remains limited)*.
+2. Implement an LRU cache limited to two regional engine entries *(Completed; this is not a process memory cap)*.
+3. Establish reproducible 300-pair empirical benchmark *(Completed)*.
+4. Ingest and calibrate planned high-risk urban river basins (Mumbai Mithi Basin, Delhi Yamuna Floodplain, Chennai Adyar Basin).
+5. Develop historical-data-based ML flood prediction and validate independently against CWC gauge records.
+6. Extend multi-hazard modeling to cyclones and landslides.
+7. Integrate live hospital destination matching and emergency dispatch routing.

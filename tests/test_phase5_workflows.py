@@ -97,6 +97,45 @@ class TestPhase5Workflows(unittest.TestCase):
         self.assertTrue(any("Routes were not calculated." in item.value for item in app.markdown))
         self.assertTrue(any("No connected path exists for this scenario." in item.value for item in app.markdown))
 
+    def test_switching_to_unavailable_region_and_reset_restores_benchmark(self):
+        app = AppTest.from_file(self.app_path, default_timeout=30).run()
+        app.selectbox(key="region_state").set_value("Maharashtra").run()
+
+        self.assertEqual(app.session_state["region_state"], "Maharashtra")
+        self.assertEqual(app.session_state["region_district"], "Mumbai Suburban")
+        self.assertEqual(app.session_state["region_id"], "mumbai_kurla")
+        self.assertEqual(app.session_state["origin_landmark"], "Kurla West Station")
+        self.assertTrue(any("UNAVAILABLE" in item.value for item in app.warning))
+
+        app.session_state["errors"] = ["stale region error"]
+        app.button[1].click().run()
+
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(app.session_state["region_state"], "Uttar Pradesh")
+        self.assertEqual(app.session_state["region_district"], "Prayagraj")
+        self.assertEqual(app.session_state["region_id"], "daraganj_prayagraj")
+        self.assertEqual(app.session_state["origin_landmark"], "Daraganj South (Benchmark Origin)")
+        self.assertEqual(app.session_state["dest_landmark"], "Daraganj North (Benchmark Dest)")
+        self.assertEqual(app.session_state["origin_lat"], 25.4348)
+        self.assertEqual(app.session_state["dest_lat"], 25.4514)
+        self.assertEqual(app.session_state["errors"], [])
+        self.assertFalse(app.warning)
+
+    def test_risk_radio_selects_risk_segment_rendering(self):
+        app = AppTest.from_file(self.app_path, default_timeout=30).run()
+        app.button[0].click().run()
+        self.assertEqual(len(app.exception), 0)
+
+        app.radio(key="map_view").set_value("Routes with risk").run()
+        self.assertEqual(app.session_state["map_view"], "Routes with risk")
+        result = app.session_state["result"]
+        request = app.session_state["result_request"]
+        plain_map = build_map(result, request, show_risk=False)
+        risk_map = build_map(result, request, show_risk=True)
+        plain_lines = [item for item in plain_map._children.values() if isinstance(item, PolyLine)]
+        risk_lines = [item for item in risk_map._children.values() if isinstance(item, PolyLine)]
+        self.assertGreater(len(risk_lines), len(plain_lines))
+
 
 if __name__ == "__main__":
     unittest.main()

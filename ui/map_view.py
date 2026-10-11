@@ -20,6 +20,7 @@ from config import (
     STUDY_AREA_NAME,
     STUDY_AREA_RADIUS_M,
 )
+from saferoute.regions import get_registry
 from services.contracts import RouteRequest, RouteResult
 
 
@@ -61,11 +62,13 @@ ROUTE_LEGEND = """
 </div>
 """
 
-PREVIEW_LEGEND = """
+
+def _preview_legend(name: str, desc: str) -> str:
+    return f"""
 <div style="position:absolute;bottom:22px;left:12px;z-index:9999;background:#fff;border:1px solid #c2cad1;
  border-radius:4px;padding:10px 14px;font:13px 'IBM Plex Sans',sans-serif;color:#14232b;line-height:1.6;box-shadow:0 2px 6px rgba(0,0,0,0.08)">
- <div style="font-weight:700;color:#0d2b36;margin-bottom:2px">Daraganj Study Area (Prayagraj)</div>
- <div style="font-size:12px;color:#4a5c66">Network: 1,823 nodes, 4,740 edges (2 km radius)</div>
+ <div style="font-weight:700;color:#0d2b36;margin-bottom:2px">{name}</div>
+ <div style="font-size:12px;color:#4a5c66">{desc}</div>
  <div style="font-size:12px;color:#0f5c6e;margin-top:4px">Click <b>Calculate routes</b> in sidebar to solve emergency paths.</div>
 </div>
 """
@@ -73,30 +76,52 @@ PREVIEW_LEGEND = """
 
 def build_study_area_map(request: RouteRequest | None = None) -> folium.Map:
     """
-    Build an informative initial map of Daraganj, Prayagraj study area before calculation.
+    Build an informative initial map of the study area before calculation.
     Shows the study perimeter, key landmarks, and selected origin/destination points.
+    Adapts to selected region in request, defaulting to Daraganj, Prayagraj baseline.
     """
+    reg_id = getattr(request, "region_id", "daraganj_prayagraj") if request else "daraganj_prayagraj"
+    region = get_registry().get_region(reg_id)
+
+    if reg_id == "daraganj_prayagraj":
+        center = list(STUDY_AREA_CENTER)
+        radius = STUDY_AREA_RADIUS_M
+        area_title = "Daraganj Study Area (Prayagraj)"
+        area_desc = "Network: 1,823 nodes, 4,740 edges (2 km radius)"
+    elif region is not None:
+        center = [region.center_lat, region.center_lon]
+        radius = region.radius_m
+        area_title = f"{region.display_name} ({region.district}, {region.state})"
+        radius_km = int(round(radius / 1000.0))
+        area_desc = f"Operational radius: {radius_km} km | Status: {region.status.name}"
+    else:
+        center = list(STUDY_AREA_CENTER)
+        radius = STUDY_AREA_RADIUS_M
+        area_title = "Daraganj Study Area (Prayagraj)"
+        area_desc = "Network: 1,823 nodes, 4,740 edges (2 km radius)"
+
     m = folium.Map(
-        location=list(STUDY_AREA_CENTER),
+        location=center,
         zoom_start=14,
         tiles="OpenStreetMap",
         control_scale=True,
     )
 
-    # 1. 2 km Study Area Radius Boundary
+    # 1. Study Area Radius Boundary
     folium.Circle(
-        location=list(STUDY_AREA_CENTER),
-        radius=STUDY_AREA_RADIUS_M,
+        location=center,
+        radius=radius,
         color="#0f5c6e",
         weight=2,
         fill=True,
         fill_color="#0f5c6e",
         fill_opacity=0.06,
-        tooltip=f"{STUDY_AREA_NAME} (2 km operational radius)",
+        tooltip=f"{area_title} ({int(round(radius / 1000.0))} km radius)",
     ).add_to(m)
 
-    # 2. Key Daraganj Landmarks
-    for name, (lat, lon) in DARAGANJ_LANDMARKS.items():
+    # 2. Key Landmarks (Daraganj or region specific)
+    landmarks = DARAGANJ_LANDMARKS if reg_id == "daraganj_prayagraj" else {}
+    for name, (lat, lon) in landmarks.items():
         folium.CircleMarker(
             location=[lat, lon],
             radius=6,
@@ -115,7 +140,7 @@ def build_study_area_map(request: RouteRequest | None = None) -> folium.Map:
         _marker(o.lat, o.lon, "A", "#0f5c6e", f"Origin: {o.name}").add_to(m)
         _marker(d.lat, d.lon, "B", "#14232b", f"Destination: {d.name}").add_to(m)
         pts = [(o.lat, o.lon), (d.lat, d.lon)]
-    else:
+    elif reg_id == "daraganj_prayagraj":
         _marker(DEFAULT_ORIGIN[0], DEFAULT_ORIGIN[1], "A", "#0f5c6e", "Origin: Sangam Ghat").add_to(m)
         _marker(DEFAULT_DEST[0], DEFAULT_DEST[1], "B", "#14232b", "Destination: Alop Shankari Devi Temple").add_to(m)
         pts = [DEFAULT_ORIGIN, DEFAULT_DEST]
@@ -129,7 +154,7 @@ def build_study_area_map(request: RouteRequest | None = None) -> folium.Map:
             padding=(30, 30),
         )
 
-    m.get_root().html.add_child(folium.Element(PREVIEW_LEGEND))
+    m.get_root().html.add_child(folium.Element(_preview_legend(area_title, area_desc)))
     return m
 
 
@@ -138,8 +163,11 @@ def build_map(result: RouteResult, request: RouteRequest, show_risk: bool) -> fo
     Build the post-calculation route map showing Primary, Backup, and Baseline routes,
     plus risk heatmap overlays and weakest segment highlights.
     """
+    reg_id = getattr(request, "region_id", "daraganj_prayagraj") if request else "daraganj_prayagraj"
+    region = get_registry().get_region(reg_id)
+    center = [region.center_lat, region.center_lon] if region else list(STUDY_AREA_CENTER)
     m = folium.Map(
-        location=list(STUDY_AREA_CENTER),
+        location=center,
         zoom_start=14,
         tiles="OpenStreetMap",
         control_scale=True,

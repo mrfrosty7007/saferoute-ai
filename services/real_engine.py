@@ -7,12 +7,14 @@ by delegating to the verified SafeRouteAI Phase 1, Phase 2, and Phase 3 backend 
 """
 from __future__ import annotations
 
+import os
 from typing import Dict, List, Optional, Tuple
 
 import networkx as nx
 
 from saferoute.data import load_cached_graph
 from saferoute.hazard import get_hazard_model
+from saferoute.regions import DEFAULT_REGION_ID, RegionMetadata, registry
 from saferoute.risk import precompute_depressions
 from saferoute.routing import RouteResult as BackendRouteResult, RoutingEngine
 from services.contracts import Route, RouteRequest, RouteResult, RoutingError, Segment
@@ -20,15 +22,35 @@ from services.contracts import Route, RouteRequest, RouteResult, RoutingError, S
 
 class RealRoutingEngine:
     """
-    Production adapter that executes genuine risk-aware pathfinding on the
-    Daraganj, Prayagraj road network graph.
+    Production adapter that executes genuine risk-aware pathfinding on a
+    regional road network graph.
     """
     simulated: bool = False
 
-    def __init__(self, G_base: Optional[nx.MultiDiGraph] = None, depressions: Optional[dict] = None):
+    def __init__(
+        self,
+        G_base: Optional[nx.MultiDiGraph] = None,
+        depressions: Optional[dict] = None,
+        region: Optional[RegionMetadata] = None,
+    ):
         """Initialize engine, caching the base network and precomputed depressions."""
-        self.G_base = G_base if G_base is not None else load_cached_graph()
-        self.depressions = depressions if depressions is not None else precompute_depressions(self.G_base)
+        self.region = region if region is not None else registry.get_or_default(DEFAULT_REGION_ID)
+        self.G_base = G_base if G_base is not None else load_cached_graph(self.region.graph_file)
+        if depressions is not None:
+            self.depressions = depressions
+        elif self.region.depressions_file and os.path.exists(self.region.depressions_file):
+            self.depressions = precompute_depressions(
+                self.G_base,
+                cache_path=self.region.depressions_file,
+                center_lat=self.region.center_lat,
+                center_lon=self.region.center_lon,
+            )
+        else:
+            self.depressions = precompute_depressions(
+                self.G_base,
+                center_lat=self.region.center_lat,
+                center_lon=self.region.center_lon,
+            )
 
     def route(self, request: RouteRequest) -> RouteResult:
         """
@@ -78,8 +100,15 @@ class RealRoutingEngine:
         else:
             raise RoutingError(f"Hazard '{request.hazard}' is not yet supported by the routing engine.")
 
-        # 3. Instantiate RoutingEngine with the enriched graph
-        engine = RoutingEngine(G_enriched, vehicle=request.vehicle, lambda_val=120.0)
+        # 3. Instantiate RoutingEngine with the enriched graph and regional coordinates
+        engine = RoutingEngine(
+            G_enriched,
+            vehicle=request.vehicle,
+            lambda_val=120.0,
+            center_lat=self.region.center_lat,
+            center_lon=self.region.center_lon,
+            max_snap_distance_m=self.region.snap_tolerance_m,
+        )
 
         # 4. Snap origin and destination coordinates to network nodes
         try:
@@ -204,6 +233,7 @@ class RealRoutingEngine:
         )
 
 
-def build() -> RealRoutingEngine:
+def build(region_id: Optional[str] = None) -> RealRoutingEngine:
     """Factory function for RealRoutingEngine."""
-    return RealRoutingEngine()
+    reg = registry.get_or_default(region_id)
+    return RealRoutingEngine(region=reg)

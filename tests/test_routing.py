@@ -195,6 +195,41 @@ class TestRoutingEngine(unittest.TestCase):
         with self.assertRaises(ValueError):
             RoutingEngine(self.G_base, vehicle="submarine")
 
+    def test_coordinate_snapping_respects_configured_meter_tolerance(self):
+        graph = nx.MultiDiGraph()
+        graph.add_node(1, x=81.880, y=25.443, elevation=80.0)
+        graph.add_node(2, x=81.881, y=25.443, elevation=80.0)
+        edge_attrs = {
+            "length": 100.0,
+            "water_depth_cm": 0.0,
+            "pass_probability_ambulance": 1.0,
+        }
+        graph.add_edge(1, 2, key=0, **edge_attrs)
+        graph.add_edge(2, 1, key=0, **edge_attrs)
+        engine = RoutingEngine(
+            graph,
+            vehicle="ambulance",
+            center_lat=25.443,
+            center_lon=81.8805,
+            max_snap_distance_m=500.0,
+        )
+        self.assertEqual(engine.snap_to_nearest_node(25.443, 81.880), 1)
+
+        # Shift longitude by roughly 1 km beyond this isolated synthetic graph.
+        far_lon = 81.880 + 1000.0 / engine.meters_lon
+        with self.assertRaisesRegex(ValueError, "500 m snapping tolerance"):
+            engine.snap_to_nearest_node(25.443, far_lon)
+
+        # The published east boundary is close to mapped road and remains usable.
+        regional_engine = RoutingEngine(
+            self.eng_amb.G_scc_raw,
+            vehicle="ambulance",
+            center_lat=25.443,
+            center_lon=81.8805,
+            max_snap_distance_m=500.0,
+        )
+        self.assertIsInstance(regional_engine.snap_to_nearest_node(25.443, 81.905), int)
+
     def test_09_seed_42_reproducibility(self):
         """Test 9: Sampling with seed 42 produces strictly deterministic OD pairs."""
         coords = {n: (self.eng_amb.graph.nodes[n]["x"], self.eng_amb.graph.nodes[n]["y"]) for n in self.scc_nodes}

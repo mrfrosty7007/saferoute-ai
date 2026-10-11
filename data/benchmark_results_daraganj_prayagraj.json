@@ -1,0 +1,50 @@
+{
+  "region_id": "daraganj_prayagraj",
+  "display_name": "Daraganj (Riverfront Pilot)",
+  "state": "Uttar Pradesh",
+  "district": "Prayagraj",
+  "timestamp_utc": "2026-10-11T09:22:01.820336+00:00",
+  "hardware_os": "win32",
+  "parameters": {
+    "num_od_pairs": 300,
+    "min_distance_meters": 1500.0,
+    "random_seed": 42
+  },
+  "system_metrics": {
+    "loading_time_seconds": 0.674,
+    "traced_python_peak_mb": 27.26,
+    "process_rss_before_load_mb": null,
+    "process_rss_after_load_mb": null,
+    "process_rss_delta_mb": null,
+    "memory_measurement_method": "tracemalloc Python allocations only; process RSS was not recorded in this run",
+    "memory_measurement_note": "Legacy single-run benchmark. The 27.26 MiB value is not process RAM or a deployment memory ceiling.",
+    "num_nodes": 1823,
+    "num_edges": 4740,
+    "elevation_coverage_pct": 100.0,
+    "depression_coverage_pct": 100.0
+  },
+  "vehicles": {
+    "ambulance": {
+      "success_rate_pct": 100.0,
+      "total_tested": 300,
+      "unreachable_count": 0,
+      "first_route_latency_ms": 105.34,
+      "subsequent_route_mean_latency_ms": 607.65,
+      "subsequent_route_p95_latency_ms": 872.35,
+      "mean_primary_reliability_pct": 0.52,
+      "mean_baseline_reliability_pct": 0.0,
+      "mean_backup_overlap_pct": 8.4
+    },
+    "rescue_truck": {
+      "success_rate_pct": 100.0,
+      "total_tested": 300,
+      "unreachable_count": 0,
+      "first_route_latency_ms": 666.62,
+      "subsequent_route_mean_latency_ms": 521.98,
+      "subsequent_route_p95_latency_ms": 852.34,
+      "mean_primary_reliability_pct": 75.5,
+      "mean_baseline_reliability_pct": 62.58,
+      "mean_backup_overlap_pct": 4.66
+    }
+  }
+}

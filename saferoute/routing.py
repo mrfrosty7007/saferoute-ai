@@ -94,6 +94,9 @@ class RoutingEngine:
         G_enriched: nx.MultiDiGraph,
         vehicle: str,
         lambda_val: float = DEFAULT_LAMBDA,
+        center_lat: Optional[float] = None,
+        center_lon: Optional[float] = None,
+        max_snap_distance_m: Optional[float] = None,
     ):
         """
         Initialize the routing engine with an enriched multi-graph.
@@ -102,6 +105,8 @@ class RoutingEngine:
             G_enriched: Road network graph with 'pass_probability' and 'water_depth_cm' edge attributes.
             vehicle: Emergency vehicle identifier ('ambulance', 'fire_tender', 'rescue_truck').
             lambda_val: Risk sensitivity weight in seconds per unit of negative log-risk.
+            center_lat: Optional regional center latitude for geodesic projection.
+            center_lon: Optional regional center longitude for geodesic projection.
         """
         if vehicle not in VEHICLES:
             raise ValueError(f"Unknown vehicle '{vehicle}'. Must be one of: {list(VEHICLES.keys())}")
@@ -109,6 +114,9 @@ class RoutingEngine:
         self.vehicle = vehicle
         self.safe_depth_cm = VEHICLES[vehicle]
         self.lambda_val = float(lambda_val)
+        self.center_lat = center_lat
+        self.center_lon = center_lon
+        self.max_snap_distance_m = max_snap_distance_m
 
         # 1. Extract largest strongly connected component
         scc_nodes = max(nx.strongly_connected_components(G_enriched), key=len)
@@ -189,11 +197,20 @@ class RoutingEngine:
         self.node_ids = list(self.graph.nodes())
         coords_m = []
 
+        self.ref_lat = self.center_lat if self.center_lat is not None else CENTER_LAT
+        self.ref_lon = self.center_lon if self.center_lon is not None else CENTER_LON
+        self.meters_lat = METERS_PER_DEG_LAT
+        self.meters_lon = (
+            (111320.0 * math.cos(math.radians(self.ref_lat)))
+            if self.center_lat is not None
+            else METERS_PER_DEG_LON
+        )
+
         for n in self.node_ids:
             x_deg = self.graph.nodes[n]["x"]
             y_deg = self.graph.nodes[n]["y"]
-            x_m = (x_deg - CENTER_LON) * METERS_PER_DEG_LON
-            y_m = (y_deg - CENTER_LAT) * METERS_PER_DEG_LAT
+            x_m = (x_deg - self.ref_lon) * self.meters_lon
+            y_m = (y_deg - self.ref_lat) * self.meters_lat
             coords_m.append((x_m, y_m))
 
         self.coords_m = np.array(coords_m)
@@ -210,9 +227,14 @@ class RoutingEngine:
         Returns:
             Nearest node ID in the graph.
         """
-        target_x_m = (lon - CENTER_LON) * METERS_PER_DEG_LON
-        target_y_m = (lat - CENTER_LAT) * METERS_PER_DEG_LAT
-        _, idx = self.kdtree.query((target_x_m, target_y_m))
+        target_x_m = (lon - self.ref_lon) * self.meters_lon
+        target_y_m = (lat - self.ref_lat) * self.meters_lat
+        distance_m, idx = self.kdtree.query((target_x_m, target_y_m))
+        if self.max_snap_distance_m is not None and distance_m > self.max_snap_distance_m:
+            raise ValueError(
+                f"Location is {distance_m:.0f} m from the nearest road, exceeding the "
+                f"{self.max_snap_distance_m:.0f} m snapping tolerance. Choose a location closer to a mapped road."
+            )
         return self.node_ids[idx]
 
     def _compile_route_result(

@@ -2,6 +2,7 @@
 import streamlit as st
 from streamlit_folium import st_folium
 
+from saferoute.regions import get_registry
 from services.contracts import RoutingError
 from services.service import compute_routes, load_engine
 from ui import panels
@@ -15,11 +16,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 inject_css()
-
-
-@st.cache_resource(show_spinner="Loading Rakshapath routing engine and road network...")
-def get_engine():
-    return load_engine()
 
 
 ss = st.session_state
@@ -37,7 +33,10 @@ if state.calculate:
     else:
         try:
             with st.spinner("Calculating modeled multi-hazard routes with Rakshapath"):
-                ss["result"] = compute_routes(state.request, get_engine())
+                target_region = state.request.region_id if state.request else "daraganj_prayagraj"
+                # load_engine uses RegionalEngineManager's bounded LRU. Avoid a
+                # second Streamlit resource cache retaining evicted region engines.
+                ss["result"] = compute_routes(state.request, load_engine(target_region))
             ss["result_sig"] = state.request.signature()
             ss["result_request"] = state.request
         except RoutingError as exc:
@@ -53,7 +52,12 @@ elif state.request is None or state.request.signature() != ss["result_sig"]:
 else:
     status = ("Routes current", "#3fb96b")
 
-panels.header(*status)
+current_reg_id = state.request.region_id if state.request else "daraganj_prayagraj"
+reg_meta = get_registry().get_region(current_reg_id)
+region_name = reg_meta.display_name if reg_meta else "Daraganj, Prayagraj"
+radius_km = int(round(reg_meta.radius_m / 1000.0)) if reg_meta else 2
+
+panels.header(*status, region_name=region_name)
 panels.banners(ss["result"], ss["errors"])
 
 result, shown_request = ss["result"], ss["result_request"]
@@ -65,9 +69,9 @@ with left:
     st.markdown('<div class="section">Map</div>', unsafe_allow_html=True)
     if result is None:
         st.markdown(
-            '<div style="font-size: 0.86rem; color: #4a5c66; margin-bottom: 0.4rem;">'
-            '<b>Daraganj Study Area Preview:</b> 2 km operational radius in Prayagraj. '
-            'Configure your scenario in the sidebar and select <b>Calculate routes</b>.</div>',
+            f'<div style="font-size: 0.86rem; color: #4a5c66; margin-bottom: 0.4rem;">'
+            f'<b>{region_name} Study Area Preview:</b> {radius_km} km operational radius. '
+            f'Configure your scenario in the sidebar and select <b>Calculate routes</b>.</div>',
             unsafe_allow_html=True,
         )
         fmap = build_study_area_map(state.request)
